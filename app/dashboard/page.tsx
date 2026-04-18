@@ -1,0 +1,504 @@
+"use client";
+import { useEffect, useState } from "react";
+import { PageShell } from "@/components/PageShell";
+import { DateNav } from "@/components/DateNav";
+import { supabase } from "@/lib/supabase";
+import { DailyWork, IrData, ReportItem } from "@/lib/types";
+import { today, fN, initials, unpackReportContent } from "@/lib/utils";
+import { getDefaultTeam } from "@/lib/auth";
+
+type ReportRow = ReportItem;
+
+function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <span className="h-5 w-1 rounded-full bg-brand-sky" />
+        <h3 className="text-base font-bold text-fg-100">{title}</h3>
+      </div>
+      {right && <div className="text-xs text-fg-500">{right}</div>}
+    </div>
+  );
+}
+
+export default function OverviewPage() {
+  const [date, setDate] = useState(today());
+  const [dailyWork, setDailyWork] = useState<DailyWork[]>([]);
+  const [irData, setIrData] = useState<IrData[]>([]);
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const team = getDefaultTeam();
+
+  useEffect(() => {
+    const load = async () => {
+      const [dw, ir, ri] = await Promise.all([
+        supabase.from("daily_work").select("*").eq("date", date),
+        supabase.from("ir_data").select("*").eq("date", date),
+        supabase.from("report_items").select("*").eq("date", date),
+      ]);
+      setDailyWork((dw.data as DailyWork[]) || []);
+      setIrData((ir.data as IrData[]) || []);
+      const rawReports = (ri.data || []) as Array<{
+        id: number;
+        date: string;
+        name: string;
+        title?: string;
+        content: string;
+        category?: string;
+      }>;
+      setReports(
+        rawReports.map((r) => {
+          const u = unpackReportContent(r.content);
+          return {
+            id: r.id,
+            date: r.date,
+            name: r.name,
+            platform: u.platform || r.title || "",
+            type: (r.category as "post" | "komentar") || "post",
+            desc: u.desc,
+            links: u.links,
+            image: u.image,
+            notes: u.notes,
+          };
+        })
+      );
+    };
+    load();
+  }, [date]);
+
+  const doneCount = dailyWork.filter((w) => w.status === "done").length;
+  const totalAktivitas = dailyWork.length + reports.length + irData.length;
+  const irDone = irData.filter((d) =>
+    ["done", "selesai", "approved"].includes((d.status || "").toLowerCase())
+  ).length;
+  const totalSelesai = doneCount + reports.length + irDone;
+  const totalLinks = reports.reduce((a, r) => a + (r.links?.length || 0), 0);
+  const totalUpload = irData.reduce((a, d) => a + (d.realisasi || 0), 0);
+  const totalViews = irData.reduce((a, d) => a + (d.output || 0), 0);
+
+  const stats = [
+    {
+      label: "Aktivitas",
+      value: totalAktivitas,
+      sub: `${dailyWork.length} kerja · ${reports.length} report · ${irData.length} input`,
+      icon: "⚡",
+      accent: "from-sky-500/20 to-transparent",
+      text: "text-brand-sky",
+    },
+    {
+      label: "Selesai",
+      value: totalSelesai,
+      sub: totalAktivitas
+        ? `${Math.round((totalSelesai / totalAktivitas) * 100)}% done`
+        : "—",
+      icon: "✓",
+      accent: "from-emerald-500/20 to-transparent",
+      text: "text-brand-emerald",
+    },
+    {
+      label: "Report",
+      value: reports.length,
+      sub: totalLinks ? `${totalLinks} link` : "—",
+      icon: "📋",
+      accent: "from-violet-500/20 to-transparent",
+      text: "text-brand-violet",
+    },
+    {
+      label: "Total Upload",
+      value: fN(totalUpload),
+      sub: `${irData.length} entri`,
+      icon: "⬆",
+      accent: "from-orange-500/20 to-transparent",
+      text: "text-brand-orange",
+    },
+    {
+      label: "Total Views",
+      value: fN(totalViews),
+      sub: "jangkauan",
+      icon: "👁",
+      accent: "from-amber-500/20 to-transparent",
+      text: "text-brand-amber",
+    },
+  ];
+
+
+  const platformsInIr = Array.from(new Set(irData.map((d) => d.sosmed).filter(Boolean)));
+
+  type Row = {
+    anggota: string;
+    platform: string;
+    sumber: "Pengerjaan" | "Report" | "Input Report";
+    desc: string;
+    realisasi: string;
+    output: string;
+    link: string;
+    status: string;
+  };
+  const allRows: Row[] = [
+    ...dailyWork.map<Row>((w) => ({
+      anggota: w.name,
+      platform: w.platform || "-",
+      sumber: "Pengerjaan",
+      desc: w.activity || "-",
+      realisasi: "",
+      output: "",
+      link: "",
+      status: w.status,
+    })),
+    ...reports.map<Row>((r) => ({
+      anggota: r.name,
+      platform: r.platform || "-",
+      sumber: "Report",
+      desc: r.desc || "-",
+      realisasi: "",
+      output: (r.links?.length || 0) + " link",
+      link: r.links?.[0] || "",
+      status: r.type === "komentar" ? "komentar" : "post",
+    })),
+    ...irData.map<Row>((d) => ({
+      anggota: d.anggota,
+      platform: d.sosmed || "-",
+      sumber: "Input Report",
+      desc: d.tim || "-",
+      realisasi: fN(d.realisasi || 0) + (d.realisasi_label ? " " + d.realisasi_label : ""),
+      output: fN(d.output || 0) + (d.output_label ? " " + d.output_label : ""),
+      link: "",
+      status: d.status || "",
+    })),
+  ];
+
+  const sumberStyle = (s: Row["sumber"]) =>
+    s === "Pengerjaan"
+      ? "bg-emerald-950 text-brand-emerald"
+      : s === "Report"
+      ? "bg-indigo-950 text-brand-violet"
+      : "bg-amber-950/50 text-brand-amber";
+
+  const statusBadge = (s: string) => {
+    if (s === "done")
+      return <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-semibold text-brand-emerald">Selesai</span>;
+    if (s === "progress")
+      return <span className="rounded bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold text-brand-amber">Proses</span>;
+    if (s === "pending")
+      return <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] font-semibold text-fg-400">Pending</span>;
+    if (!s) return <span className="text-fg-500">-</span>;
+    return <span className="text-[11px] text-fg-400">{s}</span>;
+  };
+
+  return (
+    <PageShell title="Dashboard Overview" desc="Ringkasan performa semua platform sosial media">
+      <DateNav value={date} onChange={setDate} />
+
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className="rounded-xl border border-bg-700 bg-bg-800 p-4 transition hover:border-bg-600"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                {s.label}
+              </div>
+              <div className={`text-base ${s.text}`}>{s.icon}</div>
+            </div>
+            <div className={`text-3xl font-extrabold ${s.text}`}>{s.value}</div>
+            <div className="mt-1 text-[11px] text-fg-500">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <SectionHeader
+        title="Ringkasan Anggota"
+        right={`${dailyWork.length} pengerjaan · ${reports.length} report · ${irData.length} input report`}
+      />
+      <div className="mb-8 space-y-3">
+        {team.map((t) => {
+          const uw = dailyWork.filter((w) => w.name === t.name);
+          const ur = reports.filter((r) => r.name === t.name);
+          const ui = irData.filter((d) => d.anggota === t.name);
+          const total = uw.length + ur.length + ui.length;
+          const ud = uw.filter((w) => w.status === "done").length;
+          const urL = ur.reduce((a, r) => a + (r.links?.length || 0), 0);
+          const uiR = ui.reduce((a, d) => a + (d.realisasi || 0), 0);
+          const uiO = ui.reduce((a, d) => a + (d.output || 0), 0);
+          const pct = uw.length ? Math.round((ud / uw.length) * 100) : 0;
+          const pctColor = pct >= 80 ? "bg-brand-emerald" : pct >= 50 ? "bg-brand-amber" : "bg-brand-rose";
+          const pctText = pct >= 80 ? "text-brand-emerald" : pct >= 50 ? "text-brand-amber" : "text-brand-rose";
+          const isOpen = !!expanded[t.name];
+          return (
+            <div
+              key={t.name}
+              className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <button
+                  onClick={() => setExpanded((c) => ({ ...c, [t.name]: !isOpen }))}
+                  className="flex flex-1 items-center gap-3 text-left"
+                >
+                  <span className="text-fg-500">{isOpen ? "▼" : "▶"}</span>
+                  <span
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
+                    style={{ backgroundColor: t.color }}
+                  >
+                    {initials(t.name)}
+                  </span>
+                  <div>
+                    <div className="font-bold text-fg-100">{t.name}</div>
+                    <div className="text-xs text-fg-500">{t.role}</div>
+                  </div>
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {uw.length > 0 && (
+                      <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] font-semibold text-brand-emerald">
+                        {ud}/{uw.length} kerja
+                      </span>
+                    )}
+                    {ur.length > 0 && (
+                      <span className="rounded bg-indigo-950 px-2 py-0.5 text-[10px] font-semibold text-brand-violet">
+                        {ur.length} report
+                      </span>
+                    )}
+                    {urL > 0 && (
+                      <span className="rounded bg-bg-900 px-2 py-0.5 text-[10px] font-semibold text-brand-sky">
+                        {urL} link
+                      </span>
+                    )}
+                    {uiR > 0 && (
+                      <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] font-semibold text-brand-amber">
+                        {fN(uiR)} upload
+                      </span>
+                    )}
+                    {uiO > 0 && (
+                      <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] font-semibold text-brand-sky">
+                        {fN(uiO)} views
+                      </span>
+                    )}
+                    {total === 0 && (
+                      <span className="rounded-full border border-bg-700 px-2 py-0.5 text-[9px] text-fg-600">
+                        kosong
+                      </span>
+                    )}
+                  </div>
+                  {uw.length > 0 && (
+                    <div className="flex w-20 items-center gap-1.5">
+                      <div className="h-1 flex-1 overflow-hidden rounded bg-bg-700">
+                        <div className={`h-full rounded ${pctColor}`} style={{ width: pct + "%" }} />
+                      </div>
+                      <span className={`text-[10px] font-bold ${pctText}`}>{pct}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="h-0.5 w-full" style={{ backgroundColor: t.color }} />
+
+              {isOpen && (
+                <div className="p-4">
+                  {total === 0 ? (
+                    <div className="py-4 text-center text-sm text-fg-500">
+                      Belum ada aktivitas hari ini
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Pengerjaan */}
+                      {uw.length > 0 && (
+                        <div>
+                          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                            Pengerjaan ({ud}/{uw.length} selesai)
+                          </div>
+                          <div className="space-y-1.5">
+                            {uw.map((w) => (
+                              <div key={w.id} className="flex items-center gap-3 rounded-lg border border-bg-700 bg-bg-900 px-3 py-2">
+                                <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${
+                                  w.status === "done" ? "bg-emerald-950 text-brand-emerald" :
+                                  w.status === "progress" ? "bg-amber-950/50 text-brand-amber" :
+                                  "bg-bg-700 text-fg-400"
+                                }`}>
+                                  {w.status === "done" ? "Selesai" : w.status === "progress" ? "Proses" : "Pending"}
+                                </span>
+                                <span className="text-xs text-fg-300">{w.platform}</span>
+                                <span className="flex-1 truncate text-xs text-fg-200">{w.activity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Report */}
+                      {ur.length > 0 && (
+                        <div>
+                          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                            Report ({ur.length} report · {urL} link)
+                          </div>
+                          <div className="space-y-1.5">
+                            {ur.map((r) => (
+                              <div key={r.id} className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="rounded bg-indigo-950 px-2 py-0.5 text-[10px] font-semibold text-brand-violet">
+                                    {r.type === "komentar" ? "Komentar" : "Postingan"}
+                                  </span>
+                                  <span className="text-xs text-fg-300">{r.platform}</span>
+                                  {(r.links?.length || 0) > 0 && (
+                                    <span className="text-[10px] text-brand-sky">{r.links.length} link</span>
+                                  )}
+                                </div>
+                                <div className="mt-1 truncate text-xs text-fg-400">{r.desc}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Input Report */}
+                      {ui.length > 0 && (
+                        <div>
+                          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                            Input Report ({fN(uiR)} upload · {fN(uiO)} views)
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-[10px] uppercase text-fg-500">
+                                  <th className="px-2 py-1.5 text-left">Platform</th>
+                                  <th className="px-2 py-1.5 text-left">Tim</th>
+                                  <th className="px-2 py-1.5 text-right">Upload</th>
+                                  <th className="px-2 py-1.5 text-right">Views</th>
+                                  <th className="px-2 py-1.5 text-left">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ui.map((d) => (
+                                  <tr key={d.id} className="border-t border-bg-700/50">
+                                    <td className="px-2 py-1.5 text-fg-200">{d.sosmed || "-"}</td>
+                                    <td className="px-2 py-1.5 text-fg-400">{d.tim || "-"}</td>
+                                    <td className="px-2 py-1.5 text-right font-semibold text-brand-violet">{fN(d.realisasi || 0)}</td>
+                                    <td className="px-2 py-1.5 text-right font-semibold text-brand-sky">{fN(d.output || 0)}</td>
+                                    <td className="px-2 py-1.5 text-fg-400">{d.status || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {platformsInIr.length > 0 && (
+        <>
+          <SectionHeader title="Ringkasan per Platform (Input Report)" />
+          <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {platformsInIr.map((p) => {
+              const pIr = irData.filter((d) => d.sosmed === p);
+              const pReal = pIr.reduce((a, d) => a + (d.realisasi || 0), 0);
+              const pOut = pIr.reduce((a, d) => a + (d.output || 0), 0);
+              const members = Array.from(new Set(pIr.map((d) => d.anggota)));
+              return (
+                <div
+                  key={p}
+                  className="rounded-xl border border-bg-700 bg-bg-800 p-4 transition hover:border-bg-600"
+                >
+                  <div className="mb-3 text-sm font-bold text-fg-100">{p}</div>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="text-fg-500">Upload</span>
+                    <strong className="text-brand-violet">{fN(pReal)}</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-fg-500">Views</span>
+                    <strong className="text-brand-sky">{fN(pOut)}</strong>
+                  </div>
+                  <div className="mt-3 border-t border-bg-700 pt-2 text-[10px] text-fg-600">
+                    {members.join(", ")}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <SectionHeader title="Semua Data Sosmed Anggota" right={`${allRows.length} data`} />
+      <div className="overflow-x-auto rounded-xl border border-bg-700 bg-bg-800">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-bg-700 bg-bg-900/40 text-[11px] uppercase tracking-wider text-fg-500">
+              <th className="px-4 py-3">Anggota</th>
+              <th className="px-2 py-3">Platform</th>
+              <th className="px-2 py-3">Sumber</th>
+              <th className="px-2 py-3">Aktivitas / Deskripsi</th>
+              <th className="px-2 py-3">Realisasi</th>
+              <th className="px-2 py-3">Output</th>
+              <th className="px-2 py-3">Link</th>
+              <th className="px-2 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allRows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-fg-600">
+                  Belum ada data untuk tanggal ini
+                </td>
+              </tr>
+            ) : (
+              allRows.map((r, i) => {
+                const tObj = team.find((t) => t.name === r.anggota);
+                const color = tObj?.color || "#64748b";
+                return (
+                  <tr key={i} className="border-b border-bg-700/50 transition last:border-0 hover:bg-bg-900/40">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex h-6 w-6 items-center justify-center rounded text-[9px] font-bold text-white"
+                          style={{ background: color }}
+                        >
+                          {initials(r.anggota)}
+                        </div>
+                        <span className="text-xs font-semibold text-fg-100">{r.anggota}</span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-2.5 text-xs text-fg-300">{r.platform}</td>
+                    <td className="px-2 py-2.5">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${sumberStyle(r.sumber)}`}>
+                        {r.sumber}
+                      </span>
+                    </td>
+                    <td className="max-w-[240px] truncate px-2 py-2.5 text-xs text-fg-300">{r.desc}</td>
+                    <td className="px-2 py-2.5 text-xs font-semibold text-brand-violet">
+                      {r.realisasi || "-"}
+                    </td>
+                    <td className="px-2 py-2.5 text-xs font-semibold text-brand-sky">
+                      {r.output || "-"}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      {r.link ? (
+                        <a
+                          href={r.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-brand-sky hover:underline"
+                        >
+                          🔗 Buka
+                        </a>
+                      ) : (
+                        <span className="text-fg-600">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2.5">{statusBadge(r.status)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </PageShell>
+  );
+}

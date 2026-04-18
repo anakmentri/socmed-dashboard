@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000 -o /dev/null -w \"%{http_code}\")",
+      "Bash(ipconfig)",
+      "Bash(TaskStop bo3ga0sqp *)",
+      "Bash(npx next *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"root=%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"login=%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w \"dashboard=%{http_code}\\\\n\" http://localhost:3000/dashboard)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 99172 //PID 44432)",
+      "Bash(netsh interface *)",
+      "Bash(curl -s -o /dev/null -w \"5173=%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/dashboard)",
+      "Bash(taskkill //F //PID 130032)",
+      "Bash(rm -rf \"c:/Users/user210/Downloads/dashboard-next/.next\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/dashboard)"
+    ]
+  }
+}
