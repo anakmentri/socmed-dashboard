@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { Modal, FormRow, Field, inputCls } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
+import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { Platform } from "@/lib/types";
-import { fN } from "@/lib/utils";
+import { fN, logAs } from "@/lib/utils";
 
 const empty: Platform = {
   name: "",
@@ -22,6 +23,7 @@ const empty: Platform = {
 
 export default function PlatformsPage() {
   const { toast } = useToast();
+  const { session } = useSession();
   const [rows, setRows] = useState<Platform[]>([]);
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: Platform }>({
     open: false,
@@ -49,9 +51,11 @@ export default function PlatformsPage() {
     if (modal.idx < 0) {
       const { error } = await supabase.from("platforms").insert(payload);
       if (error) return toast(error.message, true);
+      logAs(session, "Tambah Platform", "Platform", `${d.name} · ${fN(d.followers)} followers`);
     } else {
       const { error } = await supabase.from("platforms").update(payload).eq("id", d.id!);
       if (error) return toast(error.message, true);
+      logAs(session, "Edit Platform", "Platform", `${d.name}`);
     }
     toast("Platform tersimpan");
     close();
@@ -61,6 +65,7 @@ export default function PlatformsPage() {
   const remove = async (r: Platform) => {
     if (!confirm(`Hapus ${r.name}?`)) return;
     await supabase.from("platforms").delete().eq("id", r.id!);
+    logAs(session, "Hapus Platform", "Platform", r.name);
     toast("Platform dihapus");
     load();
   };
@@ -68,6 +73,7 @@ export default function PlatformsPage() {
   const removeAll = async () => {
     if (!confirm(`Hapus SEMUA ${rows.length} platform?`)) return;
     for (const r of rows) await supabase.from("platforms").delete().eq("id", r.id!);
+    logAs(session, "Hapus Semua Platform", "Platform", `${rows.length} platform dihapus`);
     toast("Semua platform dihapus");
     load();
   };

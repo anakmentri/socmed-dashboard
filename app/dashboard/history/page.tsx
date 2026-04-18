@@ -4,7 +4,7 @@ import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
 import { getDefaultTeam } from "@/lib/auth";
-import { today, initials, unpackReportContent, fN, getActivityLog } from "@/lib/utils";
+import { today, initials, unpackReportContent, fN } from "@/lib/utils";
 
 type Entry = {
   id: string;
@@ -186,36 +186,16 @@ export default function HistoryPage() {
         });
       });
 
-      // Activity log dari localStorage (semua mutation client-side)
-      const localLog = getActivityLog();
-      localLog.forEach((l) => {
-        const lDate = (l.ts || "").slice(0, 10);
-        if (lDate !== date) return;
-        const m = getMember(l.who);
-        const ac = (l.action || "").toLowerCase();
-        const actionColor =
-          ac.includes("tambah") || ac.includes("login") || ac.includes("aktif")
-            ? "text-brand-emerald"
-            : ac.includes("edit") || ac.includes("set")
-            ? "text-brand-amber"
-            : ac.includes("hapus") || ac.includes("banned") || ac.includes("logout")
-            ? "text-brand-rose"
-            : "text-brand-sky";
-        out.push({
-          id: "local-" + l.id,
-          time: fmtTime(l.ts),
-          who: l.who,
-          role: l.role || m?.role || "Anggota",
-          color: m?.color || "#64748b",
-          action: l.action,
-          actionColor,
-          detail: l.detail,
-          ts: l.ts,
-        });
+      // Deduplikasi kalau ada entry identik
+      const seen = new Set<string>();
+      const deduped = out.filter((e) => {
+        const key = `${e.ts}|${e.who}|${e.action}|${e.detail}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-
-      out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
-      setEntries(out);
+      deduped.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+      setEntries(deduped);
       setLoading(false);
     };
     load();
