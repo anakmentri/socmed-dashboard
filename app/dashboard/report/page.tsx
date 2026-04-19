@@ -12,6 +12,7 @@ const PLATFORMS = [
   "YouTube",
   "LinkedIn",
   "Telegram",
+  "Semprot",
 ];
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";

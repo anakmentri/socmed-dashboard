@@ -17,6 +17,7 @@ const PLATFORMS = [
   "YouTube",
   "LinkedIn",
   "Telegram",
+  "Semprot",
 ];
 
 const empty: DailyWork = {

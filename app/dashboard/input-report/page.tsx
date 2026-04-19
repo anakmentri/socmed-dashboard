@@ -204,7 +204,7 @@ export default function InputReportPage() {
               }
             >
               <option value="">-- pilih --</option>
-              {["Instagram", "Facebook", "X (Twitter)", "TikTok", "YouTube", "LinkedIn", "Telegram"].map(
+              {["Instagram", "Facebook", "X (Twitter)", "TikTok", "YouTube", "LinkedIn", "Telegram", "Semprot"].map(
                 (p) => (
                   <option key={p}>{p}</option>
                 )

@@ -22,6 +22,7 @@ const ALL_PLATFORMS = [
   "YouTube",
   "LinkedIn",
   "Telegram",
+  "Semprot",
 ];
 
 const ROLES = [

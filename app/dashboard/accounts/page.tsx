@@ -17,6 +17,7 @@ const PLATFORMS = [
   "YouTube",
   "LinkedIn",
   "Telegram",
+  "Semprot",
 ];
 
 const PLAT_ICONS: Record<string, { icon: string; bg: string }> = {
@@ -27,6 +28,7 @@ const PLAT_ICONS: Record<string, { icon: string; bg: string }> = {
   YouTube: { icon: "YT", bg: "bg-red-600" },
   LinkedIn: { icon: "LI", bg: "bg-blue-700" },
   Telegram: { icon: "TG", bg: "bg-sky-500" },
+  Semprot: { icon: "SP", bg: "bg-gradient-to-br from-rose-500 to-orange-500" },
 };
 
 const empty: SocAccount = {
@@ -284,6 +286,7 @@ export default function AccountsPage() {
     if (r.platform === "LinkedIn") return `https://linkedin.com/in/${u}`;
     if (r.platform === "Facebook") return `https://facebook.com/${u}`;
     if (r.platform === "Telegram") return `https://t.me/${u}`;
+    if (r.platform === "Semprot") return `https://www.semprot.com/profile/${u}`;
     return "";
   };
 
