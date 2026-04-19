@@ -63,11 +63,24 @@ export default function AssetsPage() {
   }, []);
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
-  const filtered = rows.filter(
-    (r) => r.date === date && (typeFilter === "all" || r.type === typeFilter)
-  );
+  const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
+  const filtered = rows.filter((r) => {
+    if (r.date !== date) return false;
+    if (typeFilter !== "all" && r.type !== typeFilter) return false;
+    if (providerFilter !== "all") {
+      if (providerFilter === "Lainnya") {
+        if (r.provider === "Tlegu" || r.provider === "Rully") return false;
+      } else if (r.provider !== providerFilter) return false;
+    }
+    return true;
+  });
   const fotoCount = rows.filter((r) => r.date === date && r.type === "foto").length;
   const videoCount = rows.filter((r) => r.date === date && r.type === "video").length;
+  const tleguCount = rows.filter((r) => r.date === date && r.provider === "Tlegu").length;
+  const rullyCount = rows.filter((r) => r.date === date && r.provider === "Rully").length;
+  const lainnyaCount = rows.filter(
+    (r) => r.date === date && r.provider !== "Tlegu" && r.provider !== "Rully"
+  ).length;
 
   const openAdd = () => {
     if (!canUpload) {
@@ -140,6 +153,79 @@ export default function AssetsPage() {
   return (
     <PageShell title="Asset Library" desc="Database asset postingan: gambar, link, dan caption siap pakai">
       <DateNav value={date} onChange={setDate} />
+
+      {/* Provider tabs — pisahkan postingan Tlegu & Rully */}
+      <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <button
+          onClick={() => setProviderFilter("all")}
+          className={`rounded-xl border p-3 text-left transition ${
+            providerFilter === "all"
+              ? "border-brand-sky bg-brand-sky/10"
+              : "border-bg-700 bg-bg-800 hover:border-bg-600"
+          }`}
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+            Semua Asset
+          </div>
+          <div className="mt-1 text-2xl font-extrabold text-fg-100">
+            {fotoCount + videoCount}
+          </div>
+        </button>
+        <button
+          onClick={() => setProviderFilter("Tlegu")}
+          className={`rounded-xl border p-3 text-left transition ${
+            providerFilter === "Tlegu"
+              ? "border-sky-400 bg-sky-500/10"
+              : "border-bg-700 bg-bg-800 hover:border-bg-600"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500 text-xs font-bold text-white">
+              T
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                Tlegu
+              </div>
+              <div className="text-xl font-extrabold text-sky-400">{tleguCount}</div>
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={() => setProviderFilter("Rully")}
+          className={`rounded-xl border p-3 text-left transition ${
+            providerFilter === "Rully"
+              ? "border-pink-400 bg-pink-500/10"
+              : "border-bg-700 bg-bg-800 hover:border-bg-600"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-pink-500 text-xs font-bold text-white">
+              R
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                Rully
+              </div>
+              <div className="text-xl font-extrabold text-pink-400">{rullyCount}</div>
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={() => setProviderFilter("Lainnya")}
+          className={`rounded-xl border p-3 text-left transition ${
+            providerFilter === "Lainnya"
+              ? "border-fg-400 bg-bg-700"
+              : "border-bg-700 bg-bg-800 hover:border-bg-600"
+          }`}
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+            Lainnya
+          </div>
+          <div className="mt-1 text-2xl font-extrabold text-fg-300">{lainnyaCount}</div>
+        </button>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -193,7 +279,7 @@ export default function AssetsPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.length === 0 && (
           <div className="rounded-xl border border-bg-700 bg-bg-800 p-8 text-center text-fg-500 md:col-span-2 xl:col-span-3">
-            Belum ada asset untuk tanggal {fmtIdDate(date)}
+            Belum ada asset {providerFilter !== "all" ? `dari ${providerFilter} ` : ""}untuk tanggal {fmtIdDate(date)}
           </div>
         )}
         {filtered.map((r, i) => (
@@ -231,7 +317,17 @@ export default function AssetsPage() {
                   {r.type === "video" ? "🎬 VIDEO" : "📷 FOTO"}
                 </span>
                 <span className="text-[10px] text-fg-500">{fmtIdDate(r.date)}</span>
-                <span className="text-[10px] text-fg-500">· {r.provider}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                    r.provider === "Tlegu"
+                      ? "bg-sky-500/20 text-sky-400"
+                      : r.provider === "Rully"
+                      ? "bg-pink-500/20 text-pink-400"
+                      : "bg-bg-700 text-fg-400"
+                  }`}
+                >
+                  {r.provider}
+                </span>
               </div>
               <div className="mb-2 text-sm font-bold text-fg-100">{r.title}</div>
               <div className="mb-3 max-h-20 overflow-y-auto rounded bg-bg-900 p-2 text-xs text-fg-300 whitespace-pre-wrap">
