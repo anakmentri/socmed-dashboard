@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     if (!tweetRes.ok) {
       await supabase.from("twitter_posts").insert({
         connection_id: conn.id,
-        posted_by: posted_by || ownerName,
+        posted_by: posted_by || conn.owner_name,
         text_content: text,
         status: "error",
         error: JSON.stringify(tweetJson).slice(0, 500),
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     const tweetId = tweetJson.data?.id;
     await supabase.from("twitter_posts").insert({
       connection_id: conn.id,
-      posted_by: posted_by || ownerName,
+      posted_by: posted_by || conn.owner_name,
       tweet_id: tweetId,
       text_content: text,
       status: "posted",
