@@ -37,17 +37,24 @@ function AutoPostInner() {
   const [owner, setOwner] = useState("admin");
   const [posting, setPosting] = useState(false);
 
-  const myName = session?.memberName || (session?.role === "admin" ? "admin" : "");
+  const isAdmin = session?.role === "admin";
+  const isMember = session?.role === "member";
+  const myName = session?.memberName || (isAdmin ? "admin" : "");
 
   const load = async () => {
-    const [cData, pData] = await Promise.all([
-      supabase.from("twitter_connections").select("*").order("id"),
-      supabase
-        .from("twitter_posts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50),
-    ]);
+    // Member: hanya lihat koneksi & post miliknya sendiri
+    // Admin: lihat semua
+    let connQ = supabase.from("twitter_connections").select("*").order("id");
+    let postQ = supabase
+      .from("twitter_posts")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (isMember && myName) {
+      connQ = connQ.eq("owner_name", myName);
+      postQ = postQ.eq("posted_by", myName);
+    }
+    const [cData, pData] = await Promise.all([connQ, postQ]);
     setConnections((cData.data as Connection[]) || []);
     setPosts((pData.data as Post[]) || []);
   };
@@ -125,13 +132,19 @@ function AutoPostInner() {
       <div className="mb-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-bold text-fg-100">
-            Akun Twitter Terhubung ({connections.length})
+            {isMember
+              ? `Akun Twitter Kamu${connections.length > 0 ? ` (${connections.length})` : ""}`
+              : `Akun Twitter Terhubung (${connections.length})`}
           </h3>
           <button
             onClick={connectTwitter}
             className="rounded-lg bg-[#1DA1F2] px-4 py-2 text-sm font-bold text-white hover:opacity-90"
           >
-            🐦 Connect Twitter untuk {owner}
+            🐦 {isMember
+              ? connections.length > 0
+                ? "Re-connect Twitter"
+                : "Connect Twitter Kamu"
+              : `Connect Twitter untuk ${owner}`}
           </button>
         </div>
 
@@ -177,18 +190,27 @@ function AutoPostInner() {
       <div className="mb-6 rounded-xl border border-bg-700 bg-bg-800 p-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-bold text-fg-100">Compose Tweet</h3>
-          <select
-            className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-100 outline-none"
-            value={owner}
-            onChange={(e) => setOwner(e.target.value)}
-          >
-            <option value="admin">admin</option>
-            {connections.map((c) => (
-              <option key={c.id} value={c.owner_name}>
-                {c.owner_name} (@{c.twitter_username})
-              </option>
-            ))}
-          </select>
+          {isMember ? (
+            <div className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-100">
+              Post sebagai: <strong>{myName}</strong>
+              {activeConn && (
+                <span className="ml-2 text-brand-sky">@{activeConn.twitter_username}</span>
+              )}
+            </div>
+          ) : (
+            <select
+              className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-100 outline-none"
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+            >
+              <option value="admin">admin</option>
+              {connections.map((c) => (
+                <option key={c.id} value={c.owner_name}>
+                  {c.owner_name} (@{c.twitter_username})
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {!activeConn && (

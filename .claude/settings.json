@@ -23,7 +23,8 @@
       "Bash(curl -s -I -L https://team.socmedanalytics.com)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM\" \"https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/team_members?select=*&limit=1\")",
       "Bash(curl -s -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM' 'https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/team_members?select=name,role&limit=20')",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/login)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/autopost)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app"
