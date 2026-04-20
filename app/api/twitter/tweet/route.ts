@@ -55,7 +55,7 @@ async function refreshTokenIfNeeded(conn: {
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, owner, posted_by } = await req.json();
+    const { text, owner, posted_by, connection_id } = await req.json();
 
     if (!text || !text.trim()) {
       return NextResponse.json({ error: "Text tweet kosong" }, { status: 400 });
@@ -67,16 +67,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ownerName = owner || "admin";
-    const { data: conn } = await supabase
-      .from("twitter_connections")
-      .select("*")
-      .eq("owner_name", ownerName)
-      .maybeSingle();
+    // Cari connection by id (pilihan spesifik user) atau fallback owner_name
+    let conn;
+    if (connection_id) {
+      const { data } = await supabase
+        .from("twitter_connections")
+        .select("*")
+        .eq("id", connection_id)
+        .maybeSingle();
+      conn = data;
+    } else {
+      const ownerName = owner || "admin";
+      const { data } = await supabase
+        .from("twitter_connections")
+        .select("*")
+        .eq("owner_name", ownerName)
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      conn = data;
+    }
 
     if (!conn) {
       return NextResponse.json(
-        { error: `Akun Twitter untuk "${ownerName}" belum terhubung. Klik Connect Twitter dulu.` },
+        { error: `Akun Twitter belum terhubung. Klik Connect Twitter dulu.` },
         { status: 400 }
       );
     }

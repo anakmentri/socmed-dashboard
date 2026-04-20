@@ -82,20 +82,33 @@ export async function GET(req: NextRequest) {
     Date.now() + (tokenJson.expires_in || 7200) * 1000
   ).toISOString();
 
-  // Upsert connection
-  await supabase.from("twitter_connections").upsert(
-    {
-      owner_name: oauthState.owner_name || "admin",
-      twitter_user_id: twitterUser.id || null,
-      twitter_username: twitterUser.username || null,
-      access_token: tokenJson.access_token,
-      refresh_token: tokenJson.refresh_token || null,
-      expires_at: expiresAt,
-      scope: tokenJson.scope || null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "owner_name" }
-  );
+  // Cek apakah akun Twitter ini sudah terhubung ke owner yang sama
+  const ownerName = oauthState.owner_name || "admin";
+  const { data: existing } = await supabase
+    .from("twitter_connections")
+    .select("id")
+    .eq("owner_name", ownerName)
+    .eq("twitter_user_id", twitterUser.id || "")
+    .maybeSingle();
+
+  const payload = {
+    owner_name: ownerName,
+    twitter_user_id: twitterUser.id || null,
+    twitter_username: twitterUser.username || null,
+    access_token: tokenJson.access_token,
+    refresh_token: tokenJson.refresh_token || null,
+    expires_at: expiresAt,
+    scope: tokenJson.scope || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    // Refresh token untuk akun yg sudah ada
+    await supabase.from("twitter_connections").update(payload).eq("id", existing.id);
+  } else {
+    // Insert akun baru (user bisa punya banyak akun)
+    await supabase.from("twitter_connections").insert(payload);
+  }
 
   // Cleanup state
   await supabase.from("twitter_oauth_states").delete().eq("state", state);

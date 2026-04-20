@@ -35,6 +35,7 @@ function AutoPostInner() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
+  const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [posting, setPosting] = useState(false);
 
   const isAdmin = session?.role === "admin";
@@ -90,15 +91,32 @@ function AutoPostInner() {
   const postTweet = async () => {
     if (!text.trim()) return toast("Tweet kosong", true);
     if (text.length > 280) return toast("Melebihi 280 karakter", true);
-    const conn = connections.find((c) => c.owner_name === owner);
-    if (!conn) return toast(`Akun Twitter untuk "${owner}" belum terhubung`, true);
+
+    // Filter connections milik owner yang aktif
+    const myConnections = isMember
+      ? connections
+      : connections.filter((c) => c.owner_name === owner);
+    if (myConnections.length === 0) {
+      return toast(`Akun Twitter belum terhubung. Klik Connect Twitter dulu.`, true);
+    }
+
+    // Pakai akun yang dipilih, atau fallback ke yang pertama
+    const chosenConn = selectedConnId
+      ? myConnections.find((c) => c.id === selectedConnId)
+      : myConnections[0];
+    if (!chosenConn) return toast("Pilih akun Twitter dulu", true);
 
     setPosting(true);
     try {
       const res = await fetch("/api/twitter/tweet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, owner, posted_by: myName }),
+        body: JSON.stringify({
+          text,
+          owner,
+          posted_by: myName,
+          connection_id: chosenConn.id,
+        }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -116,6 +134,21 @@ function AutoPostInner() {
     }
   };
 
+  // Akun yg tersedia untuk posting: milik member (semua) atau admin-picked owner
+  const availableConns = isMember
+    ? connections
+    : connections.filter((c) => c.owner_name === owner);
+
+  // Auto-pick first account kalau belum ada yg dipilih
+  useEffect(() => {
+    if (availableConns.length > 0 && !availableConns.find((c) => c.id === selectedConnId)) {
+      setSelectedConnId(availableConns[0].id);
+    } else if (availableConns.length === 0) {
+      setSelectedConnId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connections.length, owner]);
+
   const charCount = text.length;
   const charColor =
     charCount > 280
@@ -124,7 +157,7 @@ function AutoPostInner() {
       ? "text-brand-amber"
       : "text-fg-500";
 
-  const activeConn = connections.find((c) => c.owner_name === owner);
+  const activeConn = availableConns.find((c) => c.id === selectedConnId) || availableConns[0];
 
   return (
     <PageShell title="Auto Post" desc="Post otomatis ke Twitter dari dashboard">
@@ -213,10 +246,38 @@ function AutoPostInner() {
           )}
         </div>
 
-        {!activeConn && (
+        {availableConns.length === 0 ? (
           <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-brand-amber">
-            ⚠ Akun Twitter untuk &quot;<strong>{owner}</strong>&quot; belum terhubung. Klik
-            tombol &quot;Connect Twitter&quot; di atas dulu.
+            ⚠ Belum ada akun Twitter terhubung. Klik tombol &quot;Connect Twitter&quot; di atas dulu.
+          </div>
+        ) : availableConns.length > 1 ? (
+          <div className="mb-3">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+              Pilih akun untuk post ({availableConns.length} akun tersedia)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {availableConns.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedConnId(c.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                    selectedConnId === c.id
+                      ? "border-[#1DA1F2] bg-[#1DA1F2]/10 text-[#1DA1F2]"
+                      : "border-bg-700 bg-bg-900 text-fg-300 hover:border-bg-600"
+                  }`}
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1DA1F2] text-[10px] text-white">
+                    𝕏
+                  </span>
+                  @{c.twitter_username}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mb-3 rounded-lg border border-[#1DA1F2]/30 bg-[#1DA1F2]/5 p-2.5 text-xs text-fg-300">
+            Post akan di-kirim ke{" "}
+            <strong className="text-[#1DA1F2]">@{availableConns[0].twitter_username}</strong>
           </div>
         )}
 
@@ -235,7 +296,9 @@ function AutoPostInner() {
           </span>
           <button
             onClick={postTweet}
-            disabled={posting || !text.trim() || text.length > 280 || !activeConn}
+            disabled={
+              posting || !text.trim() || text.length > 280 || availableConns.length === 0
+            }
             className="rounded-full bg-[#1DA1F2] px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
           >
             {posting ? "Posting..." : "🚀 Post Now"}
