@@ -4,10 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "SocMed Analytics Dashboard",
   description: "Dashboard analytics & manajemen sosial media tim",
-  icons: {
-    icon: "/icon.svg",
-    apple: "/apple-icon.svg",
-  },
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
