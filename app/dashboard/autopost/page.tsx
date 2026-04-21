@@ -6,19 +6,30 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { logAs } from "@/lib/utils";
-import { useCachedData } from "@/hooks/useCachedData";
-import { invalidateCache } from "@/lib/cache";
 
-type Connection = {
+type TwitterConn = {
   id: number;
   owner_name: string;
   twitter_username: string;
-  twitter_user_id: string;
-  expires_at: string;
+};
+type TelegramConn = {
+  id: number;
+  owner_name: string;
+  chat_title: string;
+  chat_id: string;
+};
+type SocialPost = {
+  id: number;
+  platform: string;
+  posted_by: string;
+  content: string;
+  media_type: string | null;
+  status: string;
+  error: string | null;
+  external_id: string | null;
   created_at: string;
 };
-
-type Post = {
+type TwitterPost = {
   id: number;
   tweet_id: string;
   text_content: string;
@@ -28,120 +39,223 @@ type Post = {
   created_at: string;
 };
 
+type TabKey = "twitter" | "telegram";
+
+const PLATFORMS: Array<{ key: TabKey; name: string; color: string; icon: string }> = [
+  { key: "twitter", name: "X (Twitter)", color: "#1DA1F2", icon: "𝕏" },
+  { key: "telegram", name: "Telegram", color: "#229ED9", icon: "✈" },
+];
+
 function AutoPostInner() {
   const { session } = useSession();
   const { toast } = useToast();
   const sp = useSearchParams();
 
+  const [tab, setTab] = useState<TabKey>("twitter");
+  const [twConns, setTwConns] = useState<TwitterConn[]>([]);
+  const [tgConns, setTgConns] = useState<TelegramConn[]>([]);
+  const [twPosts, setTwPosts] = useState<TwitterPost[]>([]);
+  const [tgPosts, setTgPosts] = useState<SocialPost[]>([]);
+
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
-  const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [posting, setPosting] = useState(false);
+  const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
+  const [mediaBase64, setMediaBase64] = useState<string>("");
+  const [mediaType, setMediaType] = useState<"photo" | "video" | null>(null);
+
+  // Telegram setup form
+  const [showTgSetup, setShowTgSetup] = useState(false);
+  const [tgForm, setTgForm] = useState({
+    owner: "",
+    bot_token: "",
+    chat_id: "",
+    chat_title: "",
+  });
 
   const isAdmin = session?.role === "admin";
   const isMember = session?.role === "member";
   const myName = session?.memberName || (isAdmin ? "admin" : "");
 
-  const autopostKey = `autopost_${isMember ? myName : "all"}`;
-  const {
-    data: apData,
-    refresh,
-    loading: apLoading,
-    isStale: apStale,
-  } = useCachedData<{ connections: Connection[]; posts: Post[] }>({
-    key: autopostKey,
-    fetcher: async () => {
-      let connQ = supabase.from("twitter_connections").select("*").order("id");
-      let postQ = supabase
+  const load = async () => {
+    const [twC, tgC, twP, tgP] = await Promise.all([
+      isMember && myName
+        ? supabase.from("twitter_connections").select("*").eq("owner_name", myName).order("id")
+        : supabase.from("twitter_connections").select("*").order("id"),
+      isMember && myName
+        ? supabase.from("telegram_connections").select("*").eq("owner_name", myName).order("id")
+        : supabase.from("telegram_connections").select("*").order("id"),
+      supabase
         .from("twitter_posts")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(50);
-      if (isMember && myName) {
-        connQ = connQ.eq("owner_name", myName);
-        postQ = postQ.eq("posted_by", myName);
-      }
-      const [cData, pData] = await Promise.all([connQ, postQ]);
-      return {
-        connections: (cData.data as Connection[]) || [],
-        posts: (pData.data as Post[]) || [],
-      };
-    },
-  });
-  const connections: Connection[] = apData?.connections || [];
-  const posts: Post[] = apData?.posts || [];
-
-  const load = async () => {
-    invalidateCache(autopostKey);
-    await refresh();
+        .limit(30),
+      supabase
+        .from("social_posts")
+        .select("*")
+        .eq("platform", "Telegram")
+        .order("created_at", { ascending: false })
+        .limit(30),
+    ]);
+    setTwConns((twC.data as TwitterConn[]) || []);
+    setTgConns((tgC.data as TelegramConn[]) || []);
+    setTwPosts((twP.data as TwitterPost[]) || []);
+    setTgPosts((tgP.data as SocialPost[]) || []);
   };
 
   useEffect(() => {
+    load();
     if (sp.get("connected")) {
       toast(`Twitter @${sp.get("connected")} terhubung!`);
       window.history.replaceState({}, "", "/dashboard/autopost");
-      load();
     }
-    if (sp.get("error")) {
-      toast(`Error: ${sp.get("error")}`, true);
-    }
+    if (sp.get("error")) toast(`Error: ${sp.get("error")}`, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (myName) setOwner(myName);
+    if (myName) {
+      setOwner(myName);
+      setTgForm((f) => ({ ...f, owner: myName }));
+    }
   }, [myName]);
 
+  // Media upload
+  const onMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      toast("Maks 20MB", true);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMediaBase64(String(reader.result || ""));
+      setMediaType(file.type.startsWith("video") ? "video" : "photo");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearMedia = () => {
+    setMediaBase64("");
+    setMediaType(null);
+  };
+
+  // Twitter actions
   const connectTwitter = () => {
     window.location.href = `/api/twitter/auth?owner=${encodeURIComponent(owner)}`;
   };
-
-  const disconnect = async (conn: Connection) => {
-    if (!confirm(`Putuskan akun Twitter @${conn.twitter_username}?`)) return;
+  const disconnectTw = async (conn: TwitterConn) => {
+    if (!confirm(`Putuskan Twitter @${conn.twitter_username}?`)) return;
     await supabase.from("twitter_connections").delete().eq("id", conn.id);
     logAs(session, "Disconnect Twitter", "Auto Post", `@${conn.twitter_username}`);
-    toast("Akun Twitter diputuskan");
+    toast("Twitter diputuskan");
     load();
   };
 
-  const postTweet = async () => {
-    if (!text.trim()) return toast("Tweet kosong", true);
-    if (text.length > 280) return toast("Melebihi 280 karakter", true);
+  // Telegram actions
+  const saveTelegramConn = async () => {
+    if (!tgForm.owner) return toast("Pemegang wajib", true);
+    if (!tgForm.bot_token.trim()) return toast("Bot token wajib", true);
+    if (!tgForm.chat_id.trim()) return toast("Chat ID / Channel wajib", true);
 
-    // Filter connections milik owner yang aktif
-    const myConnections = isMember
-      ? connections
-      : connections.filter((c) => c.owner_name === owner);
-    if (myConnections.length === 0) {
-      return toast(`Akun Twitter belum terhubung. Klik Connect Twitter dulu.`, true);
+    // Validasi bot token dengan getMe
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${tgForm.bot_token.trim()}/getMe`
+      );
+      const j = await res.json();
+      if (!j.ok) return toast(`Bot invalid: ${j.description}`, true);
+    } catch {
+      return toast("Tidak bisa verifikasi bot token", true);
     }
 
-    // Pakai akun yang dipilih, atau fallback ke yang pertama
-    const chosenConn = selectedConnId
-      ? myConnections.find((c) => c.id === selectedConnId)
-      : myConnections[0];
-    if (!chosenConn) return toast("Pilih akun Twitter dulu", true);
+    const { error } = await supabase.from("telegram_connections").insert({
+      owner_name: tgForm.owner,
+      bot_token: tgForm.bot_token.trim(),
+      chat_id: tgForm.chat_id.trim(),
+      chat_title: tgForm.chat_title.trim() || tgForm.chat_id.trim(),
+    });
+    if (error) return toast(error.message, true);
+
+    logAs(session, "Connect Telegram", "Auto Post", tgForm.chat_title || tgForm.chat_id);
+    toast("Telegram terhubung!");
+    setShowTgSetup(false);
+    setTgForm({ owner: myName, bot_token: "", chat_id: "", chat_title: "" });
+    load();
+  };
+
+  const disconnectTg = async (conn: TelegramConn) => {
+    if (!confirm(`Putuskan Telegram ${conn.chat_title}?`)) return;
+    await supabase.from("telegram_connections").delete().eq("id", conn.id);
+    logAs(session, "Disconnect Telegram", "Auto Post", conn.chat_title);
+    toast("Telegram diputuskan");
+    load();
+  };
+
+  // Post
+  const postNow = async () => {
+    if (!text.trim() && !mediaBase64) return toast("Text atau media wajib", true);
 
     setPosting(true);
     try {
-      const res = await fetch("/api/twitter/tweet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          owner,
-          posted_by: myName,
-          connection_id: chosenConn.id,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok) {
-        toast(`Gagal post: ${j.error || "error"}`, true);
-      } else {
-        logAs(session, "Post Tweet", "Auto Post", text.slice(0, 80));
-        toast("Tweet berhasil di-post!");
-        setText("");
-        load();
+      if (tab === "twitter") {
+        if (text.length > 280) return toast("Melebihi 280 karakter", true);
+        const availConns = isMember ? twConns : twConns.filter((c) => c.owner_name === owner);
+        if (availConns.length === 0) {
+          return toast("Akun Twitter belum terhubung", true);
+        }
+        const chosen =
+          availConns.find((c) => c.id === selectedConnId) || availConns[0];
+        const res = await fetch("/api/twitter/tweet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            owner,
+            posted_by: myName,
+            connection_id: chosen.id,
+            media_base64: mediaBase64 || undefined,
+          }),
+        });
+        const j = await res.json();
+        if (!res.ok) {
+          toast(`Gagal: ${j.error || "error"}`, true);
+        } else {
+          logAs(session, "Post Tweet", "Auto Post", text.slice(0, 80));
+          toast("Tweet terkirim!");
+          setText("");
+          clearMedia();
+          load();
+        }
+      } else if (tab === "telegram") {
+        const availConns = isMember ? tgConns : tgConns.filter((c) => c.owner_name === owner);
+        if (availConns.length === 0) {
+          return toast("Akun Telegram belum terhubung", true);
+        }
+        const chosen =
+          availConns.find((c) => c.id === selectedConnId) || availConns[0];
+        const res = await fetch("/api/telegram/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: chosen.id,
+            text,
+            media_base64: mediaBase64 || undefined,
+            media_type: mediaType,
+            posted_by: myName,
+          }),
+        });
+        const j = await res.json();
+        if (!res.ok) {
+          toast(`Gagal: ${j.error || "error"}`, true);
+        } else {
+          logAs(session, "Post Telegram", "Auto Post", text.slice(0, 80));
+          toast(`Terkirim ke ${j.chat_title || "Telegram"}!`);
+          setText("");
+          clearMedia();
+          load();
+        }
       }
     } catch (e) {
       toast(`Error: ${e instanceof Error ? e.message : "unknown"}`, true);
@@ -150,161 +264,270 @@ function AutoPostInner() {
     }
   };
 
-  // Akun yg tersedia untuk posting: milik member (semua) atau admin-picked owner
-  const availableConns = isMember
-    ? connections
-    : connections.filter((c) => c.owner_name === owner);
+  const availConns =
+    tab === "twitter"
+      ? isMember
+        ? twConns
+        : twConns.filter((c) => c.owner_name === owner)
+      : isMember
+      ? tgConns
+      : tgConns.filter((c) => c.owner_name === owner);
 
-  // Auto-pick first account kalau belum ada yg dipilih
   useEffect(() => {
-    if (availableConns.length > 0 && !availableConns.find((c) => c.id === selectedConnId)) {
-      setSelectedConnId(availableConns[0].id);
-    } else if (availableConns.length === 0) {
+    if (availConns.length > 0 && !availConns.find((c) => c.id === selectedConnId)) {
+      setSelectedConnId(availConns[0].id);
+    } else if (availConns.length === 0) {
       setSelectedConnId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections.length, owner]);
+  }, [tab, twConns.length, tgConns.length, owner]);
 
+  const charLimit = tab === "twitter" ? 280 : tab === "telegram" ? 4096 : 0;
   const charCount = text.length;
   const charColor =
-    charCount > 280
+    charCount > charLimit
       ? "text-brand-rose"
-      : charCount > 260
+      : charCount > charLimit * 0.9
       ? "text-brand-amber"
       : "text-fg-500";
 
-  const activeConn = availableConns.find((c) => c.id === selectedConnId) || availableConns[0];
+  const currentPlatform = PLATFORMS.find((p) => p.key === tab)!;
+  const history = tab === "twitter" ? twPosts : tgPosts;
 
   return (
-    <PageShell title="Auto Post" desc="Post otomatis ke Twitter dari dashboard">
-      {/* Connected Accounts */}
+    <PageShell title="Auto Post" desc="Post otomatis ke sosial media — multi-platform">
+      {/* Platform Tabs */}
+      <div className="mb-5 flex gap-2 border-b border-bg-700">
+        {PLATFORMS.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => setTab(p.key)}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+              tab === p.key
+                ? "border-current"
+                : "border-transparent text-fg-500 hover:text-fg-100"
+            }`}
+            style={{ color: tab === p.key ? p.color : undefined }}
+          >
+            <span className="text-lg">{p.icon}</span>
+            {p.name}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center text-[10px] text-fg-500">
+          💡 FB/IG/TikTok butuh setup Meta App terpisah
+        </div>
+      </div>
+
+      {/* Connected Accounts Section */}
       <div className="mb-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-bold text-fg-100">
-            {isMember
-              ? `Akun Twitter Kamu${connections.length > 0 ? ` (${connections.length})` : ""}`
-              : `Akun Twitter Terhubung (${connections.length})`}
+            {tab === "twitter" ? "Akun Twitter Terhubung" : "Channel Telegram Terhubung"} (
+            {availConns.length})
           </h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={refresh}
-              disabled={apLoading}
-              className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
-            >
-              <span className={apLoading ? "animate-spin" : ""}>🔄</span>
-              {apLoading ? "..." : "Refresh"}
-              {apStale && !apLoading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
-            </button>
+          {tab === "twitter" ? (
             <button
               onClick={connectTwitter}
-              className="rounded-lg bg-[#1DA1F2] px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+              className="rounded-lg px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+              style={{ backgroundColor: currentPlatform.color }}
             >
-              🐦 {isMember
-                ? connections.length > 0
-                  ? "Re-connect Twitter"
-                  : "Connect Twitter Kamu"
-                : `Connect Twitter untuk ${owner}`}
+              🐦 {isMember ? "Connect Twitter Kamu" : `Connect Twitter untuk ${owner}`}
             </button>
-          </div>
+          ) : (
+            <button
+              onClick={() => setShowTgSetup(!showTgSetup)}
+              className="rounded-lg px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+              style={{ backgroundColor: currentPlatform.color }}
+            >
+              ✈ Tambah Channel Telegram
+            </button>
+          )}
         </div>
 
-        {connections.length === 0 ? (
-          <div className="rounded-xl border border-bg-700 bg-bg-800 p-8 text-center">
-            <div className="mb-2 text-4xl">🐦</div>
-            <div className="text-sm font-semibold text-fg-300">Belum ada akun terhubung</div>
-            <div className="mt-1 text-xs text-fg-500">
-              Klik &quot;Connect Twitter&quot; di atas untuk authorize akun
+        {/* Telegram setup form */}
+        {tab === "telegram" && showTgSetup && (
+          <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4">
+            <div className="mb-3 text-xs text-fg-300">
+              <strong>Cara setup Telegram bot (5 menit):</strong>
+              <ol className="ml-5 mt-1 list-decimal text-[11px] text-fg-400">
+                <li>
+                  Buka{" "}
+                  <a
+                    href="https://t.me/BotFather"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand-sky hover:underline"
+                  >
+                    @BotFather
+                  </a>{" "}
+                  di Telegram → `/newbot` → kasih nama → dapat <strong>Bot Token</strong>
+                </li>
+                <li>Buat channel/grup → Add bot jadi admin</li>
+                <li>
+                  Untuk cari <strong>Chat ID</strong> channel: kirim pesan di channel, buka{" "}
+                  <code className="rounded bg-bg-800 px-1">
+                    https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+                  </code>
+                  , cari <code>chat.id</code>. Atau pakai{" "}
+                  <code>@channelusername</code> untuk public channel.
+                </li>
+              </ol>
+            </div>
+
+            <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <input
+                className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky"
+                placeholder="Pemegang (anggota)"
+                value={tgForm.owner}
+                disabled={isMember}
+                onChange={(e) => setTgForm({ ...tgForm, owner: e.target.value })}
+              />
+              <input
+                className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky"
+                placeholder="Nama channel (bebas)"
+                value={tgForm.chat_title}
+                onChange={(e) => setTgForm({ ...tgForm, chat_title: e.target.value })}
+              />
+              <input
+                className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
+                placeholder="Bot Token (123456:ABC-DEF...)"
+                value={tgForm.bot_token}
+                onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
+              />
+              <input
+                className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
+                placeholder="Chat ID atau @channelusername"
+                value={tgForm.chat_id}
+                onChange={(e) => setTgForm({ ...tgForm, chat_id: e.target.value })}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowTgSetup(false)}
+                className="rounded-lg border border-bg-700 px-4 py-2 text-xs text-fg-400"
+              >
+                Batal
+              </button>
+              <button
+                onClick={saveTelegramConn}
+                className="rounded-lg bg-[#229ED9] px-6 py-2 text-xs font-bold text-white"
+              >
+                Simpan Koneksi
+              </button>
+            </div>
+          </div>
+        )}
+
+        {availConns.length === 0 ? (
+          <div className="rounded-xl border border-bg-700 bg-bg-800 p-6 text-center">
+            <div className="mb-2 text-4xl opacity-50">{currentPlatform.icon}</div>
+            <div className="text-sm text-fg-500">
+              Belum ada {currentPlatform.name} terhubung
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {connections.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center gap-3 rounded-xl border border-bg-700 bg-bg-800 p-4"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1DA1F2] text-lg font-bold text-white">
-                  𝕏
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-bold text-fg-100">
-                    @{c.twitter_username || "unknown"}
-                  </div>
-                  <div className="text-[10px] uppercase tracking-wide text-fg-500">
-                    pemegang: {c.owner_name}
-                  </div>
-                </div>
-                <button
-                  onClick={() => disconnect(c)}
-                  className="rounded bg-red-950/50 px-3 py-1 text-xs text-brand-rose hover:bg-red-950"
+            {tab === "twitter" &&
+              (availConns as TwitterConn[]).map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 rounded-xl border border-bg-700 bg-bg-800 p-4"
                 >
-                  Disconnect
-                </button>
-              </div>
-            ))}
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-full text-white"
+                    style={{ backgroundColor: currentPlatform.color }}
+                  >
+                    {currentPlatform.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-bold text-fg-100">
+                      @{c.twitter_username || "unknown"}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wide text-fg-500">
+                      {c.owner_name}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => disconnectTw(c)}
+                    className="rounded bg-red-950/50 px-3 py-1 text-xs text-brand-rose"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ))}
+            {tab === "telegram" &&
+              (availConns as TelegramConn[]).map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 rounded-xl border border-bg-700 bg-bg-800 p-4"
+                >
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-white"
+                    style={{ backgroundColor: currentPlatform.color }}
+                  >
+                    ✈
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-bold text-fg-100">{c.chat_title}</div>
+                    <div className="text-[10px] text-fg-500">
+                      {c.owner_name} · {c.chat_id}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => disconnectTg(c)}
+                    className="rounded bg-red-950/50 px-3 py-1 text-xs text-brand-rose"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ))}
           </div>
         )}
       </div>
 
-      {/* Compose Tweet */}
+      {/* Compose */}
       <div className="mb-6 rounded-xl border border-bg-700 bg-bg-800 p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-bold text-fg-100">Compose Tweet</h3>
-          {isMember ? (
-            <div className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-100">
-              Post sebagai: <strong>{myName}</strong>
-              {activeConn && (
-                <span className="ml-2 text-brand-sky">@{activeConn.twitter_username}</span>
-              )}
-            </div>
-          ) : (
+          <h3 className="text-base font-bold text-fg-100">
+            ✍ Compose {currentPlatform.name}
+          </h3>
+          {!isMember && availConns.length > 0 && (
             <select
-              className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-100 outline-none"
+              className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs"
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
             >
               <option value="admin">admin</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.owner_name}>
-                  {c.owner_name} (@{c.twitter_username})
+              {Array.from(new Set(availConns.map((c) => c.owner_name))).map((o) => (
+                <option key={o} value={o}>
+                  {o}
                 </option>
               ))}
             </select>
           )}
         </div>
 
-        {availableConns.length === 0 ? (
-          <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-brand-amber">
-            ⚠ Belum ada akun Twitter terhubung. Klik tombol &quot;Connect Twitter&quot; di atas dulu.
-          </div>
-        ) : availableConns.length > 1 ? (
-          <div className="mb-3">
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-500">
-              Pilih akun untuk post ({availableConns.length} akun tersedia)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {availableConns.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedConnId(c.id)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                    selectedConnId === c.id
-                      ? "border-[#1DA1F2] bg-[#1DA1F2]/10 text-[#1DA1F2]"
-                      : "border-bg-700 bg-bg-900 text-fg-300 hover:border-bg-600"
-                  }`}
-                >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1DA1F2] text-[10px] text-white">
-                    𝕏
-                  </span>
-                  @{c.twitter_username}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mb-3 rounded-lg border border-[#1DA1F2]/30 bg-[#1DA1F2]/5 p-2.5 text-xs text-fg-300">
-            Post akan di-kirim ke{" "}
-            <strong className="text-[#1DA1F2]">@{availableConns[0].twitter_username}</strong>
+        {availConns.length > 1 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {availConns.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedConnId(c.id)}
+                className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                  selectedConnId === c.id
+                    ? "border-current"
+                    : "border-bg-700 bg-bg-900 text-fg-400"
+                }`}
+                style={{
+                  color: selectedConnId === c.id ? currentPlatform.color : undefined,
+                }}
+              >
+                {tab === "twitter"
+                  ? `@${(c as TwitterConn).twitter_username}`
+                  : (c as TelegramConn).chat_title}
+              </button>
+            ))}
           </div>
         )}
 
@@ -313,39 +536,96 @@ function AutoPostInner() {
           rows={5}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Apa yang kamu pikirkan? Ketik tweet di sini..."
-          maxLength={500}
+          placeholder={
+            tab === "twitter"
+              ? "Apa yang kamu pikirkan? (max 280)..."
+              : "Tulis pesan Telegram... (HTML tags diizinkan: <b>, <i>, <a href>)"
+          }
         />
+
+        {/* Media upload */}
+        <div className="mt-3 flex items-center gap-2">
+          <label className="cursor-pointer rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-400 hover:border-brand-sky hover:text-fg-100">
+            📎 Attach Media
+            <input
+              type="file"
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={onMediaChange}
+            />
+          </label>
+          {mediaBase64 && (
+            <>
+              <span className="text-[11px] text-brand-emerald">
+                ✓ {mediaType === "video" ? "Video" : "Gambar"} siap dikirim
+              </span>
+              <button
+                onClick={clearMedia}
+                className="text-[11px] text-brand-rose hover:underline"
+              >
+                Hapus
+              </button>
+            </>
+          )}
+        </div>
+
+        {mediaBase64 && mediaType === "photo" && (
+          <div className="mt-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaBase64}
+              alt="preview"
+              className="max-h-48 rounded-lg border border-bg-700"
+            />
+          </div>
+        )}
+        {mediaBase64 && mediaType === "video" && (
+          <div className="mt-2">
+            <video
+              src={mediaBase64}
+              controls
+              className="max-h-48 rounded-lg border border-bg-700"
+            />
+          </div>
+        )}
 
         <div className="mt-3 flex items-center justify-between">
           <span className={`text-xs font-semibold ${charColor}`}>
-            {charCount}/280 karakter
+            {charCount}/{charLimit} karakter
           </span>
           <button
-            onClick={postTweet}
+            onClick={postNow}
             disabled={
-              posting || !text.trim() || text.length > 280 || availableConns.length === 0
+              posting ||
+              (!text.trim() && !mediaBase64) ||
+              (tab === "twitter" && text.length > 280) ||
+              availConns.length === 0
             }
-            className="rounded-full bg-[#1DA1F2] px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
+            className="rounded-full px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
+            style={{ backgroundColor: currentPlatform.color }}
           >
-            {posting ? "Posting..." : "🚀 Post Now"}
+            {posting ? "Posting..." : `🚀 Post ke ${currentPlatform.name}`}
           </button>
         </div>
       </div>
 
-      {/* Post History */}
+      {/* History */}
       <div>
         <h3 className="mb-3 text-base font-bold text-fg-100">
-          Riwayat Post ({posts.length})
+          Riwayat {currentPlatform.name} ({history.length})
         </h3>
-        {posts.length === 0 ? (
+        {history.length === 0 ? (
           <div className="rounded-xl border border-bg-700 bg-bg-800 p-6 text-center text-sm text-fg-500">
-            Belum ada tweet yang di-post
+            Belum ada post
           </div>
         ) : (
           <div className="space-y-2">
-            {posts.map((p) => {
+            {history.map((p) => {
               const isError = p.status === "error";
+              const content =
+                "text_content" in p
+                  ? (p as TwitterPost).text_content
+                  : (p as SocialPost).content;
               return (
                 <div
                   key={p.id}
@@ -363,7 +643,7 @@ function AutoPostInner() {
                           : "bg-emerald-500/20 text-brand-emerald"
                       }`}
                     >
-                      {isError ? "❌ GAGAL" : "✅ POSTED"}
+                      {isError ? "❌ GAGAL" : "✅ TERKIRIM"}
                     </span>
                     <span className="text-[10px] text-fg-500">
                       {new Date(p.created_at).toLocaleString("id-ID")}
@@ -371,21 +651,14 @@ function AutoPostInner() {
                     {p.posted_by && (
                       <span className="text-[10px] text-fg-400">· {p.posted_by}</span>
                     )}
-                    {p.tweet_id && !isError && (
-                      <a
-                        href={`https://twitter.com/i/status/${p.tweet_id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-auto text-[10px] text-brand-sky hover:underline"
-                      >
-                        Lihat di X →
-                      </a>
+                    {"media_type" in p && p.media_type && (
+                      <span className="text-[10px] text-brand-sky">
+                        · {p.media_type === "video" ? "🎬" : "🖼"} {p.media_type}
+                      </span>
                     )}
                   </div>
-                  <div className="text-sm text-fg-200 whitespace-pre-wrap">
-                    {p.text_content}
-                  </div>
-                  {isError && p.error && (
+                  <div className="text-sm text-fg-200 whitespace-pre-wrap">{content}</div>
+                  {isError && "error" in p && p.error && (
                     <div className="mt-1 text-[10px] text-brand-rose">{p.error}</div>
                   )}
                 </div>

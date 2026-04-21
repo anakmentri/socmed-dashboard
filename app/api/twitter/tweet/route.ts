@@ -60,12 +60,12 @@ async function refreshTokenIfNeeded(conn: {
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, owner, posted_by, connection_id } = await req.json();
+    const { text, owner, posted_by, connection_id, media_base64 } = await req.json();
 
-    if (!text || !text.trim()) {
-      return NextResponse.json({ error: "Text tweet kosong" }, { status: 400 });
+    if (!text && !media_base64) {
+      return NextResponse.json({ error: "Text atau media wajib ada" }, { status: 400 });
     }
-    if (text.length > 280) {
+    if (text && text.length > 280) {
       return NextResponse.json(
         { error: "Tweet melebihi 280 karakter" },
         { status: 400 }
@@ -104,13 +104,51 @@ export async function POST(req: NextRequest) {
 
     const accessToken = await refreshTokenIfNeeded(conn);
 
+    // Upload media via v1.1 endpoint kalau ada image attachment (OAuth 2.0 tidak support media upload v1.1,
+    // jadi kita coba pakai v2 /2/media/upload yang baru — still beta, fallback text-only kalau gagal)
+    let mediaId: string | null = null;
+    if (media_base64) {
+      try {
+        const mimeMatch = media_base64.match(/^data:([^;]+);base64,(.+)$/);
+        if (mimeMatch) {
+          const [, , b64] = mimeMatch;
+          const buf = Buffer.from(b64, "base64");
+          const form = new FormData();
+          form.append(
+            "media",
+            new Blob([new Uint8Array(buf)]),
+            mimeMatch[1].startsWith("video") ? "video.mp4" : "photo.jpg"
+          );
+          const upRes = await fetch("https://api.twitter.com/2/media/upload", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}` },
+            body: form,
+          });
+          const upJson = await upRes.json();
+          if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
+            mediaId = upJson.data?.id || upJson.media_id_string;
+          } else {
+            // Log error but continue with text-only
+            console.warn("Twitter media upload failed:", upJson);
+          }
+        }
+      } catch (e) {
+        console.warn("Twitter media upload error:", e);
+      }
+    }
+
+    const tweetPayload: { text: string; media?: { media_ids: string[] } } = {
+      text: text || "",
+    };
+    if (mediaId) tweetPayload.media = { media_ids: [mediaId] };
+
     const tweetRes = await fetch("https://api.twitter.com/2/tweets", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(tweetPayload),
     });
     const tweetJson = await tweetRes.json();
 
