@@ -55,6 +55,7 @@ export type SocAccount = {
   email: string;
   password: string;
   notes: string;
+  verify_link?: string;
 };
 
 export type Asset = {

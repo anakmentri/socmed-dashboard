@@ -227,14 +227,60 @@ export default function WarungPage() {
     <main className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 p-6">
       <div className="mx-auto max-w-5xl">
         <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500 text-2xl shadow-lg shadow-amber-200">
+          <div className="flex flex-1 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-2xl shadow-lg shadow-amber-200">
               ☕
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-stone-900">Warung Bu Siti</h1>
-              <p className="text-sm text-stone-500">Catatan harian modal, jualan, dan untung.</p>
-            </div>
+            {editHeader ? (
+              <div className="flex flex-1 flex-col gap-1.5">
+                <input
+                  value={headerDraft.nama}
+                  onChange={(e) => setHeaderDraft((d) => ({ ...d, nama: e.target.value }))}
+                  placeholder="Nama warung"
+                  autoFocus
+                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-lg font-bold text-stone-900 outline-none focus:border-amber-500"
+                />
+                <input
+                  value={headerDraft.subtitle}
+                  onChange={(e) => setHeaderDraft((d) => ({ ...d, subtitle: e.target.value }))}
+                  placeholder="Deskripsi singkat"
+                  className="w-full rounded-lg border border-stone-200 bg-white px-3 py-1 text-sm text-stone-600 outline-none focus:border-amber-500"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveHeader}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                  >
+                    {busy ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                  <button
+                    onClick={cancelHeader}
+                    disabled={busy}
+                    className="rounded-lg border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="group flex items-center gap-2">
+                <div>
+                  <h1 className="text-2xl font-bold text-stone-900">{settings.nama}</h1>
+                  <p className="text-sm text-stone-500">{settings.subtitle}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setHeaderDraft(settings);
+                    setEditHeader(true);
+                  }}
+                  title="Edit nama warung"
+                  className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-500 opacity-0 transition hover:bg-stone-50 hover:text-stone-700 group-hover:opacity-100"
+                >
+                  ✎ Edit
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={startAdd}

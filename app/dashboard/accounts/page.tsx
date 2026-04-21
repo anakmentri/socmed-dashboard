@@ -40,6 +40,7 @@ const empty: SocAccount = {
   email: "",
   password: "",
   notes: "",
+  verify_link: "",
 };
 
 export default function AccountsPage() {
@@ -99,6 +100,7 @@ export default function AccountsPage() {
     email: string;
     password: string;
     notes: string;
+    verify_link: string;
     banned: boolean;
   };
   const emptyBatchRow: BatchRow = {
@@ -107,6 +109,7 @@ export default function AccountsPage() {
     email: "",
     password: "",
     notes: "",
+    verify_link: "",
     banned: false,
   };
   const [batch, setBatch] = useState<{
@@ -174,6 +177,7 @@ export default function AccountsPage() {
         email: row.email.trim(),
         password: row.password.trim(),
         notes: row.notes.trim(),
+        verify_link: row.verify_link.trim(),
       };
       const { data, error } = await supabase
         .from("soc_accounts")
@@ -698,6 +702,7 @@ export default function AccountsPage() {
                               <th className="px-2 py-2 text-left">Username</th>
                               <th className="px-2 py-2 text-left">Email</th>
                               <th className="px-2 py-2 text-left">Password</th>
+                              <th className="px-2 py-2 text-left">🔗 Verify</th>
                               <th className="px-2 py-2 text-left">Status</th>
                               <th className="px-2 py-2 text-right">Aksi</th>
                             </tr>
@@ -783,6 +788,32 @@ export default function AccountsPage() {
                                         📋
                                       </button>
                                     </div>
+                                  </td>
+                                  <td className="max-w-[160px] px-2 py-2">
+                                    {r.verify_link ? (
+                                      <div className="flex items-center gap-1">
+                                        <a
+                                          href={r.verify_link}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="truncate text-[10px] text-brand-emerald hover:underline"
+                                          title={r.verify_link}
+                                        >
+                                          🔗 Link
+                                        </a>
+                                        <button
+                                          onClick={() =>
+                                            copyToClipboard(r.verify_link || "", "Link verifikasi")
+                                          }
+                                          className="text-[10px] text-fg-400 hover:text-fg-100"
+                                          title="Copy link verifikasi"
+                                        >
+                                          📋
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-fg-600">-</span>
+                                    )}
                                   </td>
                                   <td className="px-2 py-2">
                                     {isBanned ? (
@@ -1007,6 +1038,29 @@ export default function AccountsPage() {
                                 </div>
                               )}
 
+                              {r.verify_link && (
+                                <div className="mt-1.5 flex items-center gap-1">
+                                  <a
+                                    href={r.verify_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex-1 truncate text-[9px] text-brand-emerald hover:underline"
+                                    title={r.verify_link}
+                                  >
+                                    🔗 {r.verify_link}
+                                  </a>
+                                  <button
+                                    onClick={() =>
+                                      copyToClipboard(r.verify_link || "", "Link verifikasi")
+                                    }
+                                    title="Copy link verifikasi"
+                                    className="rounded border border-bg-700 bg-bg-800 px-1 text-[9px] hover:border-brand-emerald"
+                                  >
+                                    📋
+                                  </button>
+                                </div>
+                              )}
+
                               {r.notes && (
                                 <div className="mt-1.5 truncate text-[9px] italic text-fg-600" title={r.notes}>
                                   📝 {r.notes}
@@ -1159,6 +1213,12 @@ export default function AccountsPage() {
               </div>
               <input
                 className={inputCls + " mt-2 text-xs"}
+                placeholder="🔗 Link verifikasi (opsional) — mis. link konfirmasi email Twitter"
+                value={row.verify_link}
+                onChange={(e) => updateBatchRow(idx, { verify_link: e.target.value })}
+              />
+              <input
+                className={inputCls + " mt-2 text-xs"}
                 placeholder="Catatan (opsional)"
                 value={row.notes}
                 onChange={(e) => updateBatchRow(idx, { notes: e.target.value })}
@@ -1252,6 +1312,19 @@ export default function AccountsPage() {
             onChange={(e) =>
               setModal((m) => ({ ...m, data: { ...m.data, password: e.target.value } }))
             }
+          />
+        </div>
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            🔗 Link Verifikasi
+          </label>
+          <input
+            className={inputCls}
+            value={modal.data.verify_link || ""}
+            onChange={(e) =>
+              setModal((m) => ({ ...m, data: { ...m.data, verify_link: e.target.value } }))
+            }
+            placeholder="Contoh: link konfirmasi email Twitter, magic link, dll"
           />
         </div>
         <div className="mb-4">
