@@ -385,16 +385,25 @@ export default function AccountsPage() {
     }
     setBanned(nextBanned);
 
+    // Hitung status hasil
+    const unknown = Object.values(nextResults).filter(
+      (v) => v.active === null && new Date(v.at).getTime() > Date.now() - 60000
+    ).length;
+
     logAs(
       session,
       "Auto-Check Akun Sosmed",
       "Akun Sosmed",
-      `${total} dicek, ${suspended} suspended/hilang`
+      `${total} dicek, ${suspended} suspended, ${unknown} tidak pasti`
     );
     toast(
       suspended > 0
-        ? `${total} dicek — ⚠ ${suspended} akun suspended/hilang`
-        : `${total} dicek — semua aktif ✅`
+        ? `✅ ${total - suspended} aktif · ⚠ ${suspended} suspended${
+            unknown > 0 ? ` · ❓ ${unknown} tidak pasti` : ""
+          }`
+        : `✅ ${total} dicek — semua valid${
+            unknown > 0 ? `, ${unknown} tidak pasti (tidak di-banned)` : ""
+          }`
     );
     setChecking(false);
   };
