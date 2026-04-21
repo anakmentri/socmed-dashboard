@@ -24,6 +24,7 @@ export default function HistoryPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [userFilter, setUserFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -204,6 +205,16 @@ export default function HistoryPage() {
   const filtered = entries.filter((r) => {
     if (userFilter && r.who !== userFilter) return false;
     if (actionFilter && !r.action.toLowerCase().includes(actionFilter.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !r.who.toLowerCase().includes(q) &&
+        !r.action.toLowerCase().includes(q) &&
+        !r.detail.toLowerCase().includes(q) &&
+        !r.role.toLowerCase().includes(q)
+      )
+        return false;
+    }
     return true;
   });
 
@@ -217,6 +228,27 @@ export default function HistoryPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-500">
+            🔍
+          </span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari user, aksi, atau detail..."
+            className="w-full rounded-lg border border-bg-700 bg-bg-800 py-2 pl-9 pr-3 text-sm text-fg-100 outline-none focus:border-brand-sky"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-500 hover:text-fg-100"
+              title="Bersihkan"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <select
           value={userFilter}
           onChange={(e) => setUserFilter(e.target.value)}
@@ -237,69 +269,97 @@ export default function HistoryPage() {
             <option key={a}>{a}</option>
           ))}
         </select>
-        {(userFilter || actionFilter) && (
+        {(userFilter || actionFilter || search) && (
           <button
-            onClick={() => { setUserFilter(""); setActionFilter(""); }}
-            className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:text-fg-100"
+            onClick={() => {
+              setUserFilter("");
+              setActionFilter("");
+              setSearch("");
+            }}
+            className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:bg-bg-700 hover:text-fg-100"
           >
-            Clear
+            ✕ Reset
           </button>
         )}
-        <span className="ml-auto text-xs text-fg-500">{filtered.length} aktivitas</span>
+        <span className="rounded-full bg-bg-800 border border-bg-700 px-3 py-1 text-xs text-fg-400">
+          <strong className="text-fg-100">{filtered.length}</strong> aktivitas
+        </span>
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-fg-500">Memuat data...</div>
+        <div className="rounded-xl border border-bg-700 bg-bg-800 py-16 text-center">
+          <div className="mb-3 inline-block h-8 w-8 animate-spin rounded-full border-2 border-brand-sky border-t-transparent" />
+          <div className="text-sm text-fg-500">Memuat data aktivitas...</div>
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-bg-700 bg-bg-800">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-bg-700 bg-bg-900/60 text-[10px] uppercase tracking-wider text-fg-500">
-                <th className="px-4 py-3">Jam</th>
-                <th className="px-3 py-3">User</th>
-                <th className="px-3 py-3">Role</th>
-                <th className="px-3 py-3">Aksi</th>
-                <th className="px-4 py-3">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-fg-600">
-                    Belum ada aktivitas untuk tanggal ini
-                  </td>
+        <div className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800">
+          <div className="max-h-[70vh] overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-bg-900 shadow-sm">
+                <tr className="text-[10px] uppercase tracking-wider text-fg-500">
+                  <th className="border-b border-bg-700 px-4 py-3 backdrop-blur">Jam</th>
+                  <th className="border-b border-bg-700 px-3 py-3 backdrop-blur">User</th>
+                  <th className="border-b border-bg-700 px-3 py-3 backdrop-blur">Role</th>
+                  <th className="border-b border-bg-700 px-3 py-3 backdrop-blur">Aksi</th>
+                  <th className="border-b border-bg-700 px-4 py-3 backdrop-blur">Detail</th>
                 </tr>
-              ) : (
-                filtered.map((e) => (
-                  <tr key={e.id} className="border-t border-bg-700/50 transition hover:bg-bg-900/40">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-fg-100">
-                      {e.time}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="flex h-7 w-7 items-center justify-center rounded text-[10px] font-bold text-white"
-                          style={{ background: e.color }}
-                        >
-                          {initials(e.who)}
-                        </div>
-                        <span className="text-xs font-semibold text-fg-100">{e.who}</span>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-16 text-center">
+                      <div className="mb-3 text-5xl opacity-50">
+                        {search || userFilter || actionFilter ? "🔍" : "📭"}
+                      </div>
+                      <div className="mb-1 text-sm font-semibold text-fg-300">
+                        {search || userFilter || actionFilter
+                          ? "Tidak ada hasil"
+                          : "Belum ada aktivitas"}
+                      </div>
+                      <div className="text-xs text-fg-500">
+                        {search || userFilter || actionFilter
+                          ? "Coba ubah filter atau hapus pencarian"
+                          : "Aktivitas akan muncul di sini saat ada perubahan di dashboard"}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs text-fg-500">
-                      {e.role}
-                    </td>
-                    <td className={`whitespace-nowrap px-3 py-2.5 text-xs font-bold ${e.actionColor}`}>
-                      {e.action}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-fg-400">
-                      {e.detail}
-                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filtered.map((e, i) => (
+                    <tr
+                      key={e.id}
+                      className={`group border-t border-bg-700/30 transition hover:bg-bg-900/60 ${
+                        i % 2 === 0 ? "bg-bg-800" : "bg-bg-800/60"
+                      }`}
+                    >
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-fg-100">
+                        {e.time}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold text-white shadow-sm transition group-hover:scale-110"
+                            style={{ background: e.color }}
+                          >
+                            {initials(e.who)}
+                          </div>
+                          <span className="text-xs font-semibold text-fg-100">{e.who}</span>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs text-fg-500">
+                        {e.role}
+                      </td>
+                      <td className={`whitespace-nowrap px-3 py-2.5 text-xs font-bold ${e.actionColor}`}>
+                        {e.action}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-fg-400 max-w-md truncate" title={e.detail}>
+                        {e.detail}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </PageShell>

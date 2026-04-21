@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 function base64URLEncode(buffer: Buffer): string {
   return buffer
@@ -24,7 +29,7 @@ export async function GET(req: NextRequest) {
   );
   const state = base64URLEncode(crypto.randomBytes(16));
 
-  await supabase.from("twitter_oauth_states").insert({
+  await getSupabase().from("twitter_oauth_states").insert({
     state,
     code_verifier: codeVerifier,
     owner_name: ownerName,

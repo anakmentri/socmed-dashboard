@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 async function refreshTokenIfNeeded(conn: {
   id: number;
@@ -40,7 +45,7 @@ async function refreshTokenIfNeeded(conn: {
   const newExpires = new Date(
     Date.now() + (j.expires_in || 7200) * 1000
   ).toISOString();
-  await supabase
+  await getSupabase()
     .from("twitter_connections")
     .update({
       access_token: j.access_token,
@@ -66,6 +71,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const supabase = getSupabase();
 
     // Cari connection by id (pilihan spesifik user) atau fallback owner_name
     let conn;

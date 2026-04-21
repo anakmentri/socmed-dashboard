@@ -107,27 +107,33 @@ export default function AttendancePage() {
 
       {/* Member list */}
       <div className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800">
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-bg-700 bg-bg-900/60 text-[10px] uppercase tracking-wider text-fg-500">
-              <th className="px-4 py-3">Anggota</th>
-              <th className="px-3 py-3">Role</th>
-              <th className="px-3 py-3">Status</th>
-              <th className="px-4 py-3">Catatan</th>
+          <thead className="bg-bg-900">
+            <tr className="text-[10px] uppercase tracking-wider text-fg-500">
+              <th className="border-b border-bg-700 px-4 py-3">Anggota</th>
+              <th className="border-b border-bg-700 px-3 py-3">Role</th>
+              <th className="border-b border-bg-700 px-3 py-3">Status</th>
+              <th className="border-b border-bg-700 px-4 py-3">Catatan</th>
             </tr>
           </thead>
           <tbody>
-            {team.map((t) => {
+            {team.map((t, i) => {
               const rec = records[t.name];
               const currentStatus = rec?.status || "kerja";
               const currentOpt = STATUS_OPTIONS.find((o) => o.value === currentStatus)!;
               const note = rec?.note || "";
               return (
-                <tr key={t.username} className="border-t border-bg-700/50 transition hover:bg-bg-900/40">
+                <tr
+                  key={t.username}
+                  className={`group border-t border-bg-700/30 transition hover:bg-bg-900/60 ${
+                    i % 2 === 0 ? "bg-bg-800" : "bg-bg-800/60"
+                  }`}
+                >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold text-white"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm transition group-hover:scale-110"
                         style={{ backgroundColor: t.color }}
                       >
                         {initials(t.name)}
@@ -204,6 +210,7 @@ export default function AttendancePage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </PageShell>
   );

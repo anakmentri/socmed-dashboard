@@ -426,78 +426,91 @@ export default function OverviewPage() {
       )}
 
       <SectionHeader title="Semua Data Sosmed Anggota" right={`${allRows.length} data`} />
-      <div className="overflow-x-auto rounded-xl border border-bg-700 bg-bg-800">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-bg-700 bg-bg-900/40 text-[11px] uppercase tracking-wider text-fg-500">
-              <th className="px-4 py-3">Anggota</th>
-              <th className="px-2 py-3">Platform</th>
-              <th className="px-2 py-3">Sumber</th>
-              <th className="px-2 py-3">Aktivitas / Deskripsi</th>
-              <th className="px-2 py-3">Realisasi</th>
-              <th className="px-2 py-3">Output</th>
-              <th className="px-2 py-3">Link</th>
-              <th className="px-2 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {allRows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-fg-600">
-                  Belum ada data untuk tanggal ini
-                </td>
+      <div className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800">
+        <div className="max-h-[60vh] overflow-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-bg-900 shadow-sm">
+              <tr className="text-[11px] uppercase tracking-wider text-fg-500">
+                <th className="border-b border-bg-700 px-4 py-3">Anggota</th>
+                <th className="border-b border-bg-700 px-2 py-3">Platform</th>
+                <th className="border-b border-bg-700 px-2 py-3">Sumber</th>
+                <th className="border-b border-bg-700 px-2 py-3">Aktivitas / Deskripsi</th>
+                <th className="border-b border-bg-700 px-2 py-3 text-right">Realisasi</th>
+                <th className="border-b border-bg-700 px-2 py-3 text-right">Output</th>
+                <th className="border-b border-bg-700 px-2 py-3">Link</th>
+                <th className="border-b border-bg-700 px-2 py-3">Status</th>
               </tr>
-            ) : (
-              allRows.map((r, i) => {
-                const tObj = team.find((t) => t.name === r.anggota);
-                const color = tObj?.color || "#64748b";
-                return (
-                  <tr key={i} className="border-b border-bg-700/50 transition last:border-0 hover:bg-bg-900/40">
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="flex h-6 w-6 items-center justify-center rounded text-[9px] font-bold text-white"
-                          style={{ background: color }}
-                        >
-                          {initials(r.anggota)}
+            </thead>
+            <tbody>
+              {allRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-16 text-center">
+                    <div className="mb-3 text-5xl opacity-50">📊</div>
+                    <div className="mb-1 text-sm font-semibold text-fg-300">Belum ada data</div>
+                    <div className="text-xs text-fg-500">
+                      Data akan muncul saat anggota mengisi pengerjaan/report/input report
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                allRows.map((r, i) => {
+                  const tObj = team.find((t) => t.name === r.anggota);
+                  const color = tObj?.color || "#64748b";
+                  return (
+                    <tr
+                      key={i}
+                      className={`group border-t border-bg-700/30 transition hover:bg-bg-900/60 ${
+                        i % 2 === 0 ? "bg-bg-800" : "bg-bg-800/60"
+                      }`}
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold text-white shadow-sm transition group-hover:scale-110"
+                            style={{ background: color }}
+                          >
+                            {initials(r.anggota)}
+                          </div>
+                          <span className="text-xs font-semibold text-fg-100">{r.anggota}</span>
                         </div>
-                        <span className="text-xs font-semibold text-fg-100">{r.anggota}</span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2.5 text-xs text-fg-300">{r.platform}</td>
-                    <td className="px-2 py-2.5">
-                      <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${sumberStyle(r.sumber)}`}>
-                        {r.sumber}
-                      </span>
-                    </td>
-                    <td className="max-w-[240px] truncate px-2 py-2.5 text-xs text-fg-300">{r.desc}</td>
-                    <td className="px-2 py-2.5 text-xs font-semibold text-brand-violet">
-                      {r.realisasi || "-"}
-                    </td>
-                    <td className="px-2 py-2.5 text-xs font-semibold text-brand-sky">
-                      {r.output || "-"}
-                    </td>
-                    <td className="px-2 py-2.5">
-                      {r.link ? (
-                        <a
-                          href={r.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-brand-sky hover:underline"
-                        >
-                          🔗 Buka
-                        </a>
-                      ) : (
-                        <span className="text-fg-600">-</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2.5">{statusBadge(r.status)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      </td>
+                      <td className="px-2 py-2.5 text-xs text-fg-300">{r.platform}</td>
+                      <td className="px-2 py-2.5">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${sumberStyle(r.sumber)}`}>
+                          {r.sumber}
+                        </span>
+                      </td>
+                      <td className="max-w-[240px] truncate px-2 py-2.5 text-xs text-fg-300" title={r.desc}>
+                        {r.desc}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-xs font-semibold text-brand-violet">
+                        {r.realisasi || <span className="text-fg-600">-</span>}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-xs font-semibold text-brand-sky">
+                        {r.output || <span className="text-fg-600">-</span>}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {r.link ? (
+                          <a
+                            href={r.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full bg-brand-sky/10 px-2 py-0.5 text-[10px] font-semibold text-brand-sky hover:bg-brand-sky/20"
+                          >
+                            🔗 Buka
+                          </a>
+                        ) : (
+                          <span className="text-fg-600">-</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5">{statusBadge(r.status)}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </PageShell>
   );
