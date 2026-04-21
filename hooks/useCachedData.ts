@@ -31,32 +31,26 @@ export function useCachedData<T>({
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const revalidate = useCallback(
-    async (force = false) => {
-      const cached = getCached<T>(key);
-      // Kalau data masih fresh dan tidak force, skip
-      if (!force && cached.data !== null && cached.age < ttl) {
-        return cached.data;
-      }
-      // Kalau tidak ada cache sama sekali, tampilkan loading
-      if (cached.data === null) setLoading(true);
-      try {
-        const fresh = await fetcherRef.current();
-        setCached(key, fresh);
-        setData(fresh);
-        setError(null);
-        return fresh;
-      } catch (e) {
-        setError(e instanceof Error ? e : new Error("Fetch error"));
-        return cached.data; // tetap pakai cache lama kalau gagal
-      } finally {
-        setLoading(false);
-      }
-    },
-    [key, ttl]
-  );
+  const revalidate = useCallback(async () => {
+    const cached = getCached<T>(key);
+    // Kalau belum ada cache sama sekali, tampilkan loading
+    if (cached.data === null) setLoading(true);
+    try {
+      const fresh = await fetcherRef.current();
+      setCached(key, fresh);
+      setData(fresh);
+      setError(null);
+      return fresh;
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error("Fetch error"));
+      return cached.data;
+    } finally {
+      setLoading(false);
+    }
+  }, [key]);
 
-  // Initial load + background revalidation
+  // Initial load — SELALU fetch di background walau cache ada (stale-while-revalidate).
+  // Cache cuma dipakai untuk tampil instan, TIDAK boleh jadi satu-satunya sumber data.
   useEffect(() => {
     revalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,7 +84,7 @@ export function useCachedData<T>({
     data,
     loading,
     error,
-    refresh: () => revalidate(true),
+    refresh: () => revalidate(),
     mutate,
     // isStale: cache lebih tua dari TTL
     isStale: data !== null && getCached<T>(key).age > ttl,
