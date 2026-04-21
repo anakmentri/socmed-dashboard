@@ -3,7 +3,7 @@ import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
-import { DailyWork, IrData, ReportItem } from "@/lib/types";
+import { DailyWork, IrData, ReportItem, Platform } from "@/lib/types";
 import { today, fN, initials, unpackReportContent } from "@/lib/utils";
 import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { useCachedData } from "@/hooks/useCachedData";
@@ -66,6 +66,16 @@ export default function OverviewPage() {
   const dailyWork = overviewData?.dailyWork || [];
   const irData = overviewData?.irData || [];
   const reports = overviewData?.reports || [];
+
+  // Fetch platforms list (same as Platform page)
+  const { data: platformsData } = useCachedData<Platform[]>({
+    key: "platforms_all",
+    fetcher: async () => {
+      const { data } = await supabase.from("platforms").select("*");
+      return (data as Platform[]) || [];
+    },
+  });
+  const platforms = platformsData || [];
 
   const doneCount = dailyWork.filter((w) => w.status === "done").length;
   const totalAktivitas = dailyWork.length + reports.length + irData.length;
@@ -602,17 +612,17 @@ export default function OverviewPage() {
         })}
       </div>
 
-      {allPlatformsUsed.length > 0 && (
+      {platforms.length > 0 && (
         <>
           <SectionHeader
-            title="📱 Ringkasan Platform dari Tim"
-            right={`${allPlatformsUsed.length} platform aktif hari ini`}
+            title="Ringkasan Platform"
+            right={`${platforms.length} platform · data dari kerjaan tim`}
           />
-          <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {allPlatformsUsed.map((p) => {
-              const pReports = reports.filter((r) => r.platform === p);
-              const pIr = irData.filter((d) => d.sosmed === p);
-              const pDw = dailyWork.filter((w) => w.platform === p);
+          <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {platforms.map((p) => {
+              const pReports = reports.filter((r) => r.platform === p.name);
+              const pIr = irData.filter((d) => d.sosmed === p.name);
+              const pDw = dailyWork.filter((w) => w.platform === p.name);
               const totalLinks = pReports.reduce((a, r) => a + (r.links?.length || 0), 0);
               const totalUpload = pIr.reduce((a, d) => a + (d.realisasi || 0), 0);
               const totalViews = pIr.reduce((a, d) => a + (d.output || 0), 0);
@@ -623,81 +633,80 @@ export default function OverviewPage() {
                   ...pDw.map((w) => w.name),
                 ].filter(Boolean))
               );
-              const totalActivity = pReports.length + pIr.length + pDw.length;
-              const platColor = PLATFORM_COLORS[p] || "#64748b";
-              const platIcon = PLATFORM_ICONS[p] || p.slice(0, 2).toUpperCase();
+              const autoPosts = totalLinks + totalUpload;
+              const hasTeamData = pReports.length > 0 || pIr.length > 0 || pDw.length > 0;
               return (
-                <div
-                  key={p}
-                  className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800 transition hover:border-bg-600"
-                >
-                  {/* Header with platform color strip */}
-                  <div className="h-1" style={{ backgroundColor: platColor }} />
-                  <div className="p-4">
-                    <div className="mb-3 flex items-center gap-2.5">
+                <div key={p.id} className="rounded-xl border border-bg-700 bg-bg-800 p-4">
+                  {/* Header: icon + name + followers */}
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <div
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm"
-                        style={{ backgroundColor: platColor }}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
+                        style={{ backgroundColor: p.hex || "#38bdf8" }}
                       >
-                        {platIcon}
+                        {p.icon || p.name.slice(0, 2).toUpperCase()}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate text-sm font-bold text-fg-100">{p}</div>
-                        <div className="text-[10px] text-fg-500">
-                          {totalActivity} aktivitas
-                        </div>
+                      <div>
+                        <div className="font-bold text-fg-100">{p.name}</div>
+                        <div className="mt-0.5 text-xs text-fg-500">{fN(p.followers)} followers</div>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mb-2 grid grid-cols-2 gap-1.5 text-[11px]">
-                      <div className="rounded bg-indigo-500/10 px-2 py-1">
-                        <div className="text-[9px] uppercase text-fg-500">📋 Report</div>
-                        <div className="font-bold text-brand-violet">{pReports.length}</div>
-                      </div>
-                      <div className="rounded bg-sky-500/10 px-2 py-1">
-                        <div className="text-[9px] uppercase text-fg-500">🔗 Link</div>
-                        <div className="font-bold text-brand-sky">{fN(totalLinks)}</div>
-                      </div>
-                      <div className="rounded bg-amber-500/10 px-2 py-1">
-                        <div className="text-[9px] uppercase text-fg-500">⬆ Upload</div>
-                        <div className="font-bold text-brand-amber">{fN(totalUpload)}</div>
-                      </div>
-                      <div className="rounded bg-emerald-500/10 px-2 py-1">
-                        <div className="text-[9px] uppercase text-fg-500">👁 Views</div>
-                        <div className="font-bold text-brand-emerald">{fN(totalViews)}</div>
-                      </div>
+                  {/* Manual metrics — 2x2 grid */}
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      Engagement: <span className="font-bold text-brand-emerald">{p.eng}%</span>
                     </div>
+                    <div>
+                      Growth: <span className="font-bold text-brand-sky">+{fN(p.growth)}</span>
+                    </div>
+                    <div>
+                      Following: <span className="font-bold">{fN(p.following)}</span>
+                    </div>
+                    <div>
+                      Posts: <span className="font-bold">{fN(Math.max(p.posts, autoPosts))}</span>
+                    </div>
+                  </div>
 
-                    {members.length > 0 && (
-                      <div className="border-t border-bg-700 pt-2">
-                        <div className="mb-1 text-[9px] uppercase tracking-wider text-fg-500">
-                          👥 Kontributor ({members.length})
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {members.slice(0, 6).map((name) => {
-                            const t = team.find((tm) => tm.name === name);
-                            return (
-                              <span
-                                key={name}
-                                className="flex items-center gap-1 rounded-full bg-bg-700 px-1.5 py-0.5 text-[9px]"
-                              >
-                                <span
-                                  className="flex h-3 w-3 items-center justify-center rounded-full text-[7px] font-bold text-white"
-                                  style={{ backgroundColor: t?.color || "#64748b" }}
-                                >
-                                  {name[0]}
-                                </span>
-                                {name}
-                              </span>
-                            );
-                          })}
-                          {members.length > 6 && (
-                            <span className="text-[9px] text-fg-500 self-center">
-                              +{members.length - 6}
-                            </span>
-                          )}
-                        </div>
+                  {/* AUTO — Team work stats (same as Platform page) */}
+                  <div className="rounded-lg border border-brand-sky/30 bg-brand-sky/5 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-brand-sky">
+                        📊 Data dari Tim (Auto)
+                      </span>
+                      <span className="text-[9px] text-fg-500">{date}</span>
+                    </div>
+                    {!hasTeamData ? (
+                      <div className="text-[11px] text-fg-500">
+                        Belum ada kerjaan tim di platform ini
                       </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div>
+                            <span className="text-fg-500">📋 Reports:</span>{" "}
+                            <span className="font-bold text-brand-violet">{pReports.length}</span>
+                          </div>
+                          <div>
+                            <span className="text-fg-500">🔗 Link:</span>{" "}
+                            <span className="font-bold text-brand-sky">{fN(totalLinks)}</span>
+                          </div>
+                          <div>
+                            <span className="text-fg-500">⬆ Upload:</span>{" "}
+                            <span className="font-bold text-brand-amber">{fN(totalUpload)}</span>
+                          </div>
+                          <div>
+                            <span className="text-fg-500">👁 Views:</span>{" "}
+                            <span className="font-bold text-brand-emerald">{fN(totalViews)}</span>
+                          </div>
+                        </div>
+                        {members.length > 0 && (
+                          <div className="mt-2 text-[10px] text-fg-500">
+                            👥 Kontributor: {members.join(", ")}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
