@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { Modal, FormRow, Field, inputCls } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import { Asset } from "@/lib/types";
 import { DateNav } from "@/components/DateNav";
 import { today, fmtIdDate, packAssetUrl, unpackAssetUrl, logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 type Row = Asset & { id: number };
 
@@ -23,11 +25,12 @@ const empty: Asset = {
   status: "available",
 };
 
+const ASSETS_CACHE_KEY = "assets_all";
+
 export default function AssetsPage() {
   const { session } = useSession();
   const { toast } = useToast();
   const [date, setDate] = useState(today());
-  const [rows, setRows] = useState<Row[]>([]);
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: Asset }>({
     open: false,
     idx: -1,
@@ -39,9 +42,18 @@ export default function AssetsPage() {
   const canUpload =
     session?.role === "admin" || ALLOWED_UPLOADERS.includes(session?.memberName || "");
 
-  const load = async () => {
-    const { data } = await supabase.from("assets").select("*").order("created_at", { ascending: false });
-    const unpacked: Row[] = ((data || []) as Array<{ id: number; name: string; type: string; url: string; uploaded_by: string }>).map((a) => {
+  const fetchAssets = async (): Promise<Row[]> => {
+    const { data } = await supabase
+      .from("assets")
+      .select("*")
+      .order("created_at", { ascending: false });
+    return ((data || []) as Array<{
+      id: number;
+      name: string;
+      type: string;
+      url: string;
+      uploaded_by: string;
+    }>).map((a) => {
       const u = unpackAssetUrl(a.url);
       return {
         id: a.id,
@@ -56,11 +68,23 @@ export default function AssetsPage() {
         status: u.status as "available" | "used",
       };
     });
-    setRows(unpacked);
   };
-  useEffect(() => {
-    load();
-  }, []);
+
+  const {
+    data: rowsCached,
+    loading,
+    refresh,
+    isStale,
+  } = useCachedData<Row[]>({
+    key: ASSETS_CACHE_KEY,
+    fetcher: fetchAssets,
+  });
+  const rows: Row[] = rowsCached || [];
+
+  const load = async () => {
+    invalidateCache(ASSETS_CACHE_KEY);
+    await refresh();
+  };
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
   const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
@@ -259,21 +283,40 @@ export default function AssetsPage() {
             🎬 Video ({videoCount})
           </button>
         </div>
-        {canUpload ? (
+        <div className="flex items-center gap-2">
+          {/* Cache status indicator + manual refresh */}
           <button
-            onClick={openAdd}
-            className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900"
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-1.5 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+            title={
+              isStale
+                ? "Data mungkin sudah lama. Klik untuk refresh."
+                : "Data masih fresh. Klik untuk refresh manual."
+            }
           >
-            + Tambah Asset
+            <span className={loading ? "animate-spin" : ""}>🔄</span>
+            {loading ? "Refreshing..." : isStale ? "Refresh" : "Fresh"}
+            {isStale && !loading && (
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
+            )}
           </button>
-        ) : (
-          <span
-            title="Hanya Tlegu & Rully yang bisa menambahkan asset"
-            className="rounded-lg border border-bg-700 bg-bg-800 px-4 py-2 text-xs text-fg-500"
-          >
-            🔒 Upload dibatasi (Tlegu & Rully)
-          </span>
-        )}
+          {canUpload ? (
+            <button
+              onClick={openAdd}
+              className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900"
+            >
+              + Tambah Asset
+            </button>
+          ) : (
+            <span
+              title="Hanya Tlegu & Rully yang bisa menambahkan asset"
+              className="rounded-lg border border-bg-700 bg-bg-800 px-4 py-2 text-xs text-fg-500"
+            >
+              🔒 Upload dibatasi (Tlegu & Rully)
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
