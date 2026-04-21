@@ -29,6 +29,19 @@ body {
   background: #475569;
 }
 
+/* Thin scrollbar for internal lists */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* Toast */
 .toast {
   position: fixed;

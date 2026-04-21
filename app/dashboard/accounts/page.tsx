@@ -559,7 +559,7 @@ export default function AccountsPage() {
                 <div className="h-0.5 w-full" style={{ backgroundColor: t.color }} />
 
                 {isOpen && (
-                  <div className="p-4">
+                  <div className="max-h-[60vh] overflow-y-auto p-4 scrollbar-thin">
                     {memberAccs.length === 0 ? (
                       <div className="py-6 text-center">
                         <div className="mb-2 text-3xl opacity-50">🐣</div>
