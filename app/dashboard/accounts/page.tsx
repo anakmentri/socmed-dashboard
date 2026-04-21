@@ -291,6 +291,110 @@ export default function AccountsPage() {
     input.click();
   };
 
+  // Auto-check status akun sosmed
+  const [checking, setChecking] = useState(false);
+  const [checkResults, setCheckResults] = useState<
+    Record<number, { active: boolean | null; reason: string; at: string }>
+  >({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("dashboard_account_check_results");
+      if (raw) setCheckResults(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const saveCheckResults = (
+    r: Record<number, { active: boolean | null; reason: string; at: string }>
+  ) => {
+    try {
+      localStorage.setItem("dashboard_account_check_results", JSON.stringify(r));
+    } catch {}
+  };
+
+  const checkAccounts = async (accountsToCheck: SocAccount[]) => {
+    if (accountsToCheck.length === 0) return;
+    setChecking(true);
+    const checks = accountsToCheck
+      .filter((a) => a.id)
+      .map((a) => ({
+        id: a.id!,
+        url: profileUrl(a),
+        platform: a.platform,
+      }))
+      .filter((c) => c.url);
+
+    if (checks.length === 0) {
+      toast("Tidak ada URL profil valid", true);
+      setChecking(false);
+      return;
+    }
+
+    // Batch 20-an (limit API)
+    const chunks: typeof checks[] = [];
+    for (let i = 0; i < checks.length; i += 20) chunks.push(checks.slice(i, i + 20));
+
+    let total = 0;
+    let suspended = 0;
+    const nextResults = { ...checkResults };
+    const nextBanned = { ...banned };
+
+    for (const chunk of chunks) {
+      try {
+        const res = await fetch("/api/check-account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ checks: chunk }),
+        });
+        const j = await res.json();
+        for (const r of j.results || []) {
+          nextResults[r.id] = {
+            active: r.active,
+            reason: r.reason,
+            at: new Date().toISOString(),
+          };
+          total++;
+          // Auto-toggle banned kalau terdeteksi suspended
+          if (r.active === false) {
+            nextBanned[r.id] = true;
+            suspended++;
+          } else if (r.active === true && nextBanned[r.id]) {
+            // Kalau sebelumnya banned tapi sekarang aktif, tidak auto-unban (biar admin yang putuskan)
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    setCheckResults(nextResults);
+    saveCheckResults(nextResults);
+
+    // Sync banned status ke Supabase
+    for (const [id, isBanned] of Object.entries(nextBanned)) {
+      if (isBanned && !banned[Number(id)]) {
+        await supabase
+          .from("banned_accounts")
+          .upsert({ account_id: Number(id) })
+          .then(() => {});
+      }
+    }
+    setBanned(nextBanned);
+
+    logAs(
+      session,
+      "Auto-Check Akun Sosmed",
+      "Akun Sosmed",
+      `${total} dicek, ${suspended} suspended/hilang`
+    );
+    toast(
+      suspended > 0
+        ? `${total} dicek — ⚠ ${suspended} akun suspended/hilang`
+        : `${total} dicek — semua aktif ✅`
+    );
+    setChecking(false);
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     if (!text) return toast(`${label} kosong`, true);
     try {
@@ -359,6 +463,15 @@ export default function AccountsPage() {
             {accountsStale && !accountsLoading && (
               <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
             )}
+          </button>
+          <button
+            onClick={() => checkAccounts(rows)}
+            disabled={checking}
+            className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-brand-emerald hover:bg-emerald-500/20 disabled:opacity-50"
+            title="Cek semua akun via HTTP — deteksi otomatis yang suspended/hilang"
+          >
+            <span className={checking ? "animate-spin" : ""}>🔍</span>
+            {checking ? "Mengecek..." : "Cek Semua Akun"}
           </button>
           <button
             onClick={exportAccounts}
@@ -539,6 +652,17 @@ export default function AccountsPage() {
                     </div>
                   </button>
                   <div className="flex items-center gap-2">
+                    {memberAccs.length > 0 && (
+                      <button
+                        onClick={() => checkAccounts(memberAccs)}
+                        disabled={checking}
+                        className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-brand-sky hover:bg-sky-500/20 disabled:opacity-50"
+                        title="Cek status semua akun milik anggota ini"
+                      >
+                        <span className={checking ? "inline-block animate-spin" : ""}>🔍</span>{" "}
+                        Cek
+                      </button>
+                    )}
                     <button
                       onClick={() => openAddFor(t.name)}
                       className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20"
@@ -860,6 +984,28 @@ export default function AccountsPage() {
                                   🗑
                                 </button>
                               </div>
+
+                              {/* Status check result */}
+                              {checkResults[r.id!] && (
+                                <div
+                                  className={`mt-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] ${
+                                    checkResults[r.id!].active === true
+                                      ? "bg-emerald-500/10 text-brand-emerald"
+                                      : checkResults[r.id!].active === false
+                                      ? "bg-red-500/10 text-brand-rose"
+                                      : "bg-bg-700 text-fg-500"
+                                  }`}
+                                  title={`${checkResults[r.id!].reason} · Dicek ${new Date(
+                                    checkResults[r.id!].at
+                                  ).toLocaleString("id-ID")}`}
+                                >
+                                  {checkResults[r.id!].active === true
+                                    ? "✅ Terverifikasi Aktif"
+                                    : checkResults[r.id!].active === false
+                                    ? "⚠ " + checkResults[r.id!].reason.slice(0, 30)
+                                    : "❓ Belum dicek"}
+                                </div>
+                              )}
 
                               {r.notes && (
                                 <div className="mt-1.5 truncate text-[9px] italic text-fg-600" title={r.notes}>
