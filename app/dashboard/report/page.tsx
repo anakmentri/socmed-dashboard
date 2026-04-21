@@ -93,6 +93,86 @@ export default function ReportPage() {
 
   const team = getDefaultTeam();
 
+  // Quick Paste modal — bulk import URL aktifitas anggota
+  const [paste, setPaste] = useState<{
+    open: boolean;
+    owner: string;
+    desc: string;
+    urlsText: string;
+    processing: boolean;
+  }>({ open: false, owner: "", desc: "", urlsText: "", processing: false });
+
+  const openPaste = () =>
+    setPaste({
+      open: true,
+      owner: isMember ? myName : "",
+      desc: "",
+      urlsText: "",
+      processing: false,
+    });
+  const closePaste = () => setPaste((p) => ({ ...p, open: false }));
+
+  const detectPlatform = (url: string): string => {
+    const u = url.toLowerCase();
+    if (u.includes("instagram.com") || u.includes("ig.me")) return "Instagram";
+    if (u.includes("facebook.com") || u.includes("fb.com") || u.includes("fb.watch")) return "Facebook";
+    if (u.includes("x.com") || u.includes("twitter.com")) return "X (Twitter)";
+    if (u.includes("tiktok.com")) return "TikTok";
+    if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
+    if (u.includes("linkedin.com")) return "LinkedIn";
+    if (u.includes("t.me") || u.includes("telegram")) return "Telegram";
+    if (u.includes("semprot")) return "Semprot";
+    return "Instagram";
+  };
+
+  // Group URLs by platform → 1 entri report per platform
+  const runPaste = async () => {
+    if (!paste.owner) return toast("Pilih anggota dulu", true);
+    const urls = paste.urlsText
+      .split(/[\n,\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => /^https?:\/\//.test(s));
+    if (urls.length === 0) return toast("Tidak ada URL valid", true);
+
+    setPaste((p) => ({ ...p, processing: true }));
+    // Kelompokkan per platform
+    const byPlatform: Record<string, string[]> = {};
+    for (const url of urls) {
+      const pl = detectPlatform(url);
+      (byPlatform[pl] = byPlatform[pl] || []).push(url);
+    }
+
+    let inserted = 0;
+    for (const [platform, links] of Object.entries(byPlatform)) {
+      const desc = paste.desc.trim() || `Auto-import ${links.length} link dari ${platform}`;
+      const payload = {
+        date,
+        name: paste.owner,
+        title: platform,
+        content: packReportContent({
+          desc,
+          links,
+          image: "",
+          notes: "",
+          platform,
+        }),
+        category: "post" as const,
+      };
+      const { error } = await supabase.from("report_items").insert(payload);
+      if (!error) inserted++;
+    }
+
+    logAs(
+      session,
+      "Bulk Import Report",
+      "Report",
+      `${inserted} platform, ${urls.length} link untuk ${paste.owner}`
+    );
+    toast(`${inserted} entri dibuat dari ${urls.length} URL`);
+    setPaste((p) => ({ ...p, processing: false, open: false }));
+    load();
+  };
+
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -167,6 +247,13 @@ export default function ReportPage() {
             <span className={loading ? "animate-spin" : ""}>🔄</span>
             {loading ? "..." : "Refresh"}
             {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+          </button>
+          <button
+            onClick={openPaste}
+            className="rounded-lg bg-gradient-to-r from-emerald-500 to-sky-500 px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+            title="Paste banyak URL sosmed, dashboard auto-record per platform"
+          >
+            ⚡ Quick Paste URL
           </button>
           <button
             onClick={openAdd}
@@ -300,6 +387,91 @@ export default function ReportPage() {
             );
           })}
       </div>
+
+      {/* Quick Paste URL Modal */}
+      <Modal
+        open={paste.open}
+        onClose={closePaste}
+        title="⚡ Quick Paste URL Sosmed"
+        width={640}
+      >
+        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-fg-200">
+          💡 Paste banyak URL dari sosmed sekaligus (Instagram, X, TikTok, dll).
+          Dashboard <strong>otomatis deteksi platform</strong> & buat report per platform.
+        </div>
+
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            Anggota (pemegang report)
+          </label>
+          <select
+            className={inputCls}
+            value={paste.owner}
+            disabled={isMember}
+            onChange={(e) => setPaste((p) => ({ ...p, owner: e.target.value }))}
+          >
+            <option value="">-- Pilih anggota --</option>
+            {team.map((t) => (
+              <option key={t.username} value={t.name}>
+                {t.name} ({t.role})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            Deskripsi kerjaan (opsional)
+          </label>
+          <input
+            className={inputCls}
+            placeholder="Contoh: Posting promo April, komentar viral, dll"
+            value={paste.desc}
+            onChange={(e) => setPaste((p) => ({ ...p, desc: e.target.value }))}
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            URL Sosmed (satu per baris)
+          </label>
+          <textarea
+            className={inputCls + " min-h-[180px] font-mono text-xs"}
+            placeholder={`Paste URL di sini, satu per baris:
+
+https://instagram.com/p/ABC123
+https://x.com/user/status/456789
+https://tiktok.com/@user/video/999
+https://youtube.com/watch?v=xxx`}
+            value={paste.urlsText}
+            onChange={(e) => setPaste((p) => ({ ...p, urlsText: e.target.value }))}
+          />
+          <div className="mt-2 text-[11px] text-fg-500">
+            {
+              paste.urlsText
+                .split(/[\n,\s]+/)
+                .filter((u) => /^https?:\/\//.test(u.trim())).length
+            }{" "}
+            URL terdeteksi
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-bg-700 pt-4">
+          <button
+            onClick={closePaste}
+            className="rounded-lg border border-bg-700 px-4 py-2 text-sm text-fg-300"
+          >
+            Batal
+          </button>
+          <button
+            onClick={runPaste}
+            disabled={paste.processing}
+            className="rounded-lg bg-gradient-to-r from-emerald-500 to-sky-500 px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {paste.processing ? "Memproses..." : "⚡ Import Semua"}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={modal.open}
