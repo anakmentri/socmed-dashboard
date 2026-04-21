@@ -17,6 +17,7 @@ type TelegramConn = {
   owner_name: string;
   chat_title: string;
   chat_id: string;
+  bot_token: string;
 };
 type SocialPost = {
   id: number;
@@ -156,30 +157,56 @@ function AutoPostInner() {
   // Telegram actions
   const saveTelegramConn = async () => {
     if (!tgForm.owner) return toast("Pemegang wajib", true);
-    if (!tgForm.bot_token.trim()) return toast("Bot token wajib", true);
     if (!tgForm.chat_id.trim()) return toast("Chat ID / Channel wajib", true);
 
-    // Validasi bot token dengan getMe
+    // Auto-reuse token dari koneksi yang sudah ada (kalau user tidak isi token baru)
+    let tokenToUse = tgForm.bot_token.trim();
+    if (!tokenToUse && tgConns.length > 0) {
+      tokenToUse = tgConns[0].bot_token; // pakai bot yang sudah ada
+    }
+    if (!tokenToUse) {
+      return toast("Bot token wajib untuk koneksi pertama", true);
+    }
+
+    // Validasi bot token dengan getMe (hanya kalau token baru)
+    if (tgForm.bot_token.trim()) {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${tokenToUse}/getMe`);
+        const j = await res.json();
+        if (!j.ok) return toast(`Bot invalid: ${j.description}`, true);
+      } catch {
+        return toast("Tidak bisa verifikasi bot token", true);
+      }
+    }
+
+    // Validasi chat_id: cek apakah bot bisa kirim ke chat ini
     try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${tgForm.bot_token.trim()}/getMe`
+      const chatTest = await fetch(
+        `https://api.telegram.org/bot${tokenToUse}/getChat?chat_id=${encodeURIComponent(
+          tgForm.chat_id.trim()
+        )}`
       );
-      const j = await res.json();
-      if (!j.ok) return toast(`Bot invalid: ${j.description}`, true);
+      const j = await chatTest.json();
+      if (!j.ok) {
+        return toast(
+          `Bot tidak bisa akses channel: ${j.description}. Pastikan bot sudah di-invite sebagai admin.`,
+          true
+        );
+      }
     } catch {
-      return toast("Tidak bisa verifikasi bot token", true);
+      toast("Warning: tidak bisa validate chat_id, tetap disimpan", false);
     }
 
     const { error } = await supabase.from("telegram_connections").insert({
       owner_name: tgForm.owner,
-      bot_token: tgForm.bot_token.trim(),
+      bot_token: tokenToUse,
       chat_id: tgForm.chat_id.trim(),
       chat_title: tgForm.chat_title.trim() || tgForm.chat_id.trim(),
     });
     if (error) return toast(error.message, true);
 
     logAs(session, "Connect Telegram", "Auto Post", tgForm.chat_title || tgForm.chat_id);
-    toast("Telegram terhubung!");
+    toast("Channel Telegram ditambahkan!");
     setShowTgSetup(false);
     setTgForm({ owner: myName, bot_token: "", chat_id: "", chat_title: "" });
     load();
@@ -347,32 +374,39 @@ function AutoPostInner() {
         {/* Telegram setup form */}
         {tab === "telegram" && showTgSetup && (
           <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4">
-            <div className="mb-3 text-xs text-fg-300">
-              <strong>Cara setup Telegram bot (5 menit):</strong>
-              <ol className="ml-5 mt-1 list-decimal text-[11px] text-fg-400">
-                <li>
-                  Buka{" "}
-                  <a
-                    href="https://t.me/BotFather"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand-sky hover:underline"
-                  >
-                    @BotFather
-                  </a>{" "}
-                  di Telegram → `/newbot` → kasih nama → dapat <strong>Bot Token</strong>
-                </li>
-                <li>Buat channel/grup → Add bot jadi admin</li>
-                <li>
-                  Untuk cari <strong>Chat ID</strong> channel: kirim pesan di channel, buka{" "}
-                  <code className="rounded bg-bg-800 px-1">
-                    https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
-                  </code>
-                  , cari <code>chat.id</code>. Atau pakai{" "}
-                  <code>@channelusername</code> untuk public channel.
-                </li>
-              </ol>
-            </div>
+            {tgConns.length > 0 ? (
+              // Sudah ada bot yang tersimpan — cukup chat_id
+              <div className="mb-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-brand-emerald">
+                ✓ Bot Telegram sudah ada (terhubung sebelumnya). Cukup{" "}
+                <strong>invite bot ke channel baru sebagai admin</strong>, lalu isi Chat ID di bawah.
+              </div>
+            ) : (
+              <div className="mb-3 text-xs text-fg-300">
+                <strong>Setup pertama — Bot Token wajib (sekali saja):</strong>
+                <ol className="ml-5 mt-1 list-decimal text-[11px] text-fg-400">
+                  <li>
+                    Buka{" "}
+                    <a
+                      href="https://t.me/BotFather"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-brand-sky hover:underline"
+                    >
+                      @BotFather
+                    </a>{" "}
+                    → /newbot → kasih nama → dapat Bot Token (SEKALI SAJA)
+                  </li>
+                  <li>Invite bot ke channel/grup sebagai admin</li>
+                  <li>
+                    Untuk channel public: pakai <code>@channelusername</code>. Untuk private: cari chat_id pakai{" "}
+                    <code className="rounded bg-bg-800 px-1">getUpdates</code>
+                  </li>
+                </ol>
+                <div className="mt-1 text-brand-emerald">
+                  💡 Setelah token disimpan 1x, channel baru cuma perlu Chat ID
+                </div>
+              </div>
+            )}
 
             <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
               <input
@@ -384,19 +418,21 @@ function AutoPostInner() {
               />
               <input
                 className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky"
-                placeholder="Nama channel (bebas)"
+                placeholder="Nama channel (bebas, buat label)"
                 value={tgForm.chat_title}
                 onChange={(e) => setTgForm({ ...tgForm, chat_title: e.target.value })}
               />
+              {tgConns.length === 0 && (
+                <input
+                  className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
+                  placeholder="Bot Token (123456:ABC-DEF...) — cuma setup pertama"
+                  value={tgForm.bot_token}
+                  onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
+                />
+              )}
               <input
                 className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
-                placeholder="Bot Token (123456:ABC-DEF...)"
-                value={tgForm.bot_token}
-                onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
-              />
-              <input
-                className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
-                placeholder="Chat ID atau @channelusername"
+                placeholder="Chat ID (mis: -1001234567890) atau @channelusername"
                 value={tgForm.chat_id}
                 onChange={(e) => setTgForm({ ...tgForm, chat_id: e.target.value })}
               />
