@@ -27,8 +27,16 @@ type Draft = {
 
 const EMPTY: Draft = { id: null, nama: '', satuan: 'pcs', modal: '', jual: '', stok: '' };
 
+type Settings = { nama: string; subtitle: string };
+
 export default function WarungPage() {
   const [items, setItems] = useState<Item[]>([]);
+  const [settings, setSettings] = useState<Settings>({
+    nama: 'Warung Saya',
+    subtitle: 'Catatan harian modal, jualan, dan untung.',
+  });
+  const [editHeader, setEditHeader] = useState(false);
+  const [headerDraft, setHeaderDraft] = useState<Settings>(settings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [query, setQuery] = useState('');
@@ -42,15 +50,20 @@ export default function WarungPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from('warung_items')
-        .select('*')
-        .order('id', { ascending: true });
+      const [itemsRes, settingsRes] = await Promise.all([
+        supabase.from('warung_items').select('*').order('id', { ascending: true }),
+        supabase.from('warung_settings').select('nama, subtitle').eq('id', 1).maybeSingle(),
+      ]);
       if (cancelled) return;
-      if (error) {
-        setError(error.message);
+      if (itemsRes.error) {
+        setError(itemsRes.error.message);
       } else {
-        setItems((data ?? []) as Item[]);
+        setItems((itemsRes.data ?? []) as Item[]);
+      }
+      if (!settingsRes.error && settingsRes.data) {
+        const s = settingsRes.data as Settings;
+        setSettings(s);
+        setHeaderDraft(s);
       }
       setLoading(false);
     })();
@@ -58,6 +71,25 @@ export default function WarungPage() {
       cancelled = true;
     };
   }, []);
+
+  const saveHeader = async () => {
+    const nama = headerDraft.nama.trim() || 'Warung Saya';
+    const subtitle = headerDraft.subtitle.trim() || 'Catatan harian modal, jualan, dan untung.';
+    setBusy(true);
+    const { error } = await supabase
+      .from('warung_settings')
+      .upsert({ id: 1, nama, subtitle, updated_at: new Date().toISOString() });
+    setBusy(false);
+    if (error) return alert('Gagal simpan nama warung: ' + error.message);
+    setSettings({ nama, subtitle });
+    setEditHeader(false);
+    flash('Nama warung diperbarui.');
+  };
+
+  const cancelHeader = () => {
+    setHeaderDraft(settings);
+    setEditHeader(false);
+  };
 
   const view = useMemo(() => {
     const q = query.trim().toLowerCase();

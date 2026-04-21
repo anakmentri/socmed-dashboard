@@ -6,7 +6,7 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { SocAccount } from "@/lib/types";
-import { getDefaultTeam } from "@/lib/auth";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { logAs } from "@/lib/utils";
 import { useCachedData } from "@/hooks/useCachedData";
 import { invalidateCache } from "@/lib/cache";
@@ -45,7 +45,7 @@ const empty: SocAccount = {
 export default function AccountsPage() {
   const { session } = useSession();
   const { toast } = useToast();
-  const team = getDefaultTeam();
+  const { team } = useTeamMembers();
   const [showPw, setShowPw] = useState<Record<number, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [banned, setBanned] = useState<Record<number, boolean>>({});

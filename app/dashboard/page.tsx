@@ -5,7 +5,7 @@ import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
 import { DailyWork, IrData, ReportItem } from "@/lib/types";
 import { today, fN, initials, unpackReportContent } from "@/lib/utils";
-import { getDefaultTeam } from "@/lib/auth";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { useCachedData } from "@/hooks/useCachedData";
 
 type ReportRow = ReportItem;
@@ -25,7 +25,7 @@ function SectionHeader({ title, right }: { title: string; right?: React.ReactNod
 export default function OverviewPage() {
   const [date, setDate] = useState(today());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const team = getDefaultTeam();
+  const { team } = useTeamMembers();
 
   const { data: overviewData, refresh, loading, isStale } = useCachedData<{
     dailyWork: DailyWork[];

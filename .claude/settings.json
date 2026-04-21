@@ -43,7 +43,12 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/report)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard)",
       "Bash(curl -s -o /dev/null -w \"icon=%{http_code} \" https://socmedanalytics.com/icon.svg)",
-      "Bash(curl -s -o /dev/null -w \"apple=%{http_code}\\\\n\" https://socmedanalytics.com/apple-icon.svg)"
+      "Bash(curl -s -o /dev/null -w \"apple=%{http_code}\\\\n\" https://socmedanalytics.com/apple-icon.svg)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/probe.json -w 'HTTP %{http_code}\\\\n' 'https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/warung_items?select=id&limit=1' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM')",
+      "Bash(curl -s -o /dev/null -w \"favicon=%{http_code}\\\\n\" https://socmedanalytics.com/icon.svg)",
+      "Bash(curl -s -o /tmp/warung-ping.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3010/warung)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app"

@@ -38,7 +38,24 @@ alter table warung_sales enable row level security;
 drop policy if exists "warung_sales_all" on warung_sales;
 create policy "warung_sales_all" on warung_sales for all using (true) with check (true);
 
--- 3. Seed data awal (hanya kalau tabel masih kosong)
+-- 3. WARUNG_SETTINGS (nama warung & subtitle — bisa diedit dari UI)
+create table if not exists warung_settings (
+  id integer primary key default 1,
+  nama text not null default 'Warung Saya',
+  subtitle text not null default 'Catatan harian modal, jualan, dan untung.',
+  updated_at timestamptz default now(),
+  constraint warung_settings_single_row check (id = 1)
+);
+
+alter table warung_settings enable row level security;
+drop policy if exists "warung_settings_all" on warung_settings;
+create policy "warung_settings_all" on warung_settings for all using (true) with check (true);
+
+insert into warung_settings (id, nama, subtitle)
+values (1, 'Warung Bu Siti', 'Catatan harian modal, jualan, dan untung.')
+on conflict (id) do nothing;
+
+-- 4. Seed data awal (hanya kalau tabel masih kosong)
 insert into warung_items (nama, satuan, modal, jual, stok, terjual)
 select * from (values
   ('Kopi Sachet',      'bks',   1200,  2000, 150, 0),

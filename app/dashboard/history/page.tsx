@@ -3,7 +3,7 @@ import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
-import { getDefaultTeam } from "@/lib/auth";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { today, initials, unpackReportContent, fN } from "@/lib/utils";
 import { useCachedData } from "@/hooks/useCachedData";
 
@@ -20,7 +20,7 @@ type Entry = {
 };
 
 export default function HistoryPage() {
-  const team = getDefaultTeam();
+  const { team } = useTeamMembers();
   const [date, setDate] = useState(today());
   const [userFilter, setUserFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");

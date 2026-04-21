@@ -4,7 +4,7 @@ import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
-import { getDefaultTeam } from "@/lib/auth";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { supabase } from "@/lib/supabase";
 import { today, initials, logAs } from "@/lib/utils";
 import { useCachedData } from "@/hooks/useCachedData";
@@ -47,7 +47,7 @@ const STATUS_OPTIONS: { value: Status; label: string; cls: string; icon: string 
 export default function AttendancePage() {
   const { session } = useSession();
   const { toast } = useToast();
-  const team = getDefaultTeam();
+  const { team } = useTeamMembers();
   const isAdmin = session?.role === "admin";
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";

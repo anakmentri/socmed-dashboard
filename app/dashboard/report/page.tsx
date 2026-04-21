@@ -18,7 +18,7 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { ReportItem } from "@/lib/types";
-import { getDefaultTeam } from "@/lib/auth";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { today, packReportContent, unpackReportContent, logAs } from "@/lib/utils";
 import { useCachedData } from "@/hooks/useCachedData";
 import { invalidateCache } from "@/lib/cache";
@@ -91,7 +91,7 @@ export default function ReportPage() {
     setModal({ open: true, idx: i, data: { ...r }, linksText: r.links.join("\n") });
   const close = () => setModal((m) => ({ ...m, open: false }));
 
-  const team = getDefaultTeam();
+  const { team } = useTeamMembers();
 
   // Quick Paste modal — bulk import URL aktifitas anggota
   const [paste, setPaste] = useState<{
