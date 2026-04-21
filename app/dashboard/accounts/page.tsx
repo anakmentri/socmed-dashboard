@@ -52,6 +52,7 @@ export default function AccountsPage() {
   const [filter, setFilter] = useState<"all" | "active" | "banned">("all");
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string>("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const loadBanned = async () => {
     try {
@@ -460,6 +461,30 @@ export default function AccountsPage() {
             </button>
           );
         })}
+        <div className="ml-auto flex rounded-lg border border-bg-700 bg-bg-800 p-0.5">
+          <button
+            onClick={() => setViewMode("grid")}
+            title="Tampilan kartu"
+            className={`rounded px-2.5 py-1 text-[11px] font-semibold transition ${
+              viewMode === "grid"
+                ? "bg-brand-sky text-bg-900"
+                : "text-fg-400 hover:text-fg-100"
+            }`}
+          >
+            ▦ Grid
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            title="Tampilan list (kompak)"
+            className={`rounded px-2.5 py-1 text-[11px] font-semibold transition ${
+              viewMode === "list"
+                ? "bg-brand-sky text-bg-900"
+                : "text-fg-400 hover:text-fg-100"
+            }`}
+          >
+            ☰ List
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -540,8 +565,160 @@ export default function AccountsPage() {
                         <div className="mb-2 text-3xl opacity-50">🐣</div>
                         <div className="text-sm text-fg-500">Belum ada akun yang terdaftar</div>
                       </div>
+                    ) : viewMode === "list" ? (
+                      <div className="overflow-hidden rounded-lg border border-bg-700">
+                        <table className="w-full text-xs">
+                          <thead className="bg-bg-900 text-[10px] uppercase tracking-wider text-fg-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Platform</th>
+                              <th className="px-2 py-2 text-left">Username</th>
+                              <th className="px-2 py-2 text-left">Email</th>
+                              <th className="px-2 py-2 text-left">Password</th>
+                              <th className="px-2 py-2 text-left">Status</th>
+                              <th className="px-2 py-2 text-right">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {memberAccs.map((r) => {
+                              const idx = rows.indexOf(r);
+                              const pi = PLAT_ICONS[r.platform] || {
+                                icon: r.platform.slice(0, 2),
+                                bg: "bg-gray-700",
+                              };
+                              const pUrl = profileUrl(r);
+                              const isBanned = !!banned[r.id!];
+                              return (
+                                <tr
+                                  key={r.id}
+                                  className={`group border-t border-bg-700/40 transition hover:bg-bg-900/60 ${
+                                    isBanned ? "bg-red-950/20" : ""
+                                  }`}
+                                >
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className={`flex h-6 w-6 items-center justify-center rounded text-[9px] font-bold text-white ${pi.bg} ${
+                                          isBanned ? "grayscale" : ""
+                                        }`}
+                                      >
+                                        {pi.icon}
+                                      </div>
+                                      <span
+                                        className={`font-semibold ${
+                                          isBanned ? "text-fg-500 line-through" : "text-fg-100"
+                                        }`}
+                                      >
+                                        {r.platform}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    {r.username ? (
+                                      <button
+                                        onClick={() =>
+                                          copyToClipboard(
+                                            r.username.replace(/^@/, ""),
+                                            "Username"
+                                          )
+                                        }
+                                        className="text-fg-300 hover:text-fg-100 hover:underline"
+                                      >
+                                        @{r.username.replace(/^@/, "")}
+                                      </button>
+                                    ) : (
+                                      <span className="text-fg-600">-</span>
+                                    )}
+                                  </td>
+                                  <td className="max-w-[180px] truncate px-2 py-2">
+                                    <button
+                                      onClick={() => copyToClipboard(r.email, "Email")}
+                                      className="truncate text-brand-sky hover:underline"
+                                      title={r.email}
+                                    >
+                                      {r.email}
+                                    </button>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono text-fg-300">
+                                        {showPw[r.id!] ? r.password : "••••••"}
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          setShowPw((p) => ({ ...p, [r.id!]: !p[r.id!] }))
+                                        }
+                                        className="text-[9px] text-brand-sky hover:underline"
+                                      >
+                                        {showPw[r.id!] ? "H" : "Lihat"}
+                                      </button>
+                                      <button
+                                        onClick={() => copyToClipboard(r.password, "Password")}
+                                        title="Copy password"
+                                        className="text-[10px] text-fg-400 hover:text-fg-100"
+                                      >
+                                        📋
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    {isBanned ? (
+                                      <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-rose">
+                                        🚫 Banned
+                                      </span>
+                                    ) : (
+                                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-emerald">
+                                        Aktif
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-right">
+                                    <div className="flex justify-end gap-1">
+                                      {pUrl && (
+                                        <a
+                                          href={pUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          title="Buka profil"
+                                          className="rounded border border-bg-700 px-1.5 py-0.5 text-[10px] hover:border-brand-sky"
+                                        >
+                                          🔗
+                                        </a>
+                                      )}
+                                      <button
+                                        onClick={() => toggleBanned(r.id!)}
+                                        title={isBanned ? "Aktifkan" : "Tandai banned"}
+                                        className={`rounded px-1.5 py-0.5 text-[10px] ${
+                                          isBanned
+                                            ? "bg-emerald-950 text-brand-emerald"
+                                            : "bg-red-950/50 text-brand-rose"
+                                        }`}
+                                      >
+                                        {isBanned ? "↩" : "🚫"}
+                                      </button>
+                                      <button
+                                        onClick={() => openEdit(r, idx)}
+                                        title="Edit"
+                                        className="rounded bg-bg-700 px-1.5 py-0.5 text-[10px] text-brand-sky"
+                                      >
+                                        ✎
+                                      </button>
+                                      <button
+                                        onClick={() => remove(r)}
+                                        title="Hapus"
+                                        className="rounded bg-red-950/50 px-1.5 py-0.5 text-[10px] text-brand-rose"
+                                      >
+                                        🗑
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {memberAccs.map((r) => {
                           const idx = rows.indexOf(r);
                           const pi = PLAT_ICONS[r.platform] || {
@@ -553,56 +730,40 @@ export default function AccountsPage() {
                           return (
                             <div
                               key={r.id}
-                              className={`group relative rounded-xl border p-4 transition ${
+                              className={`group relative rounded-lg border p-2.5 transition ${
                                 isBanned
                                   ? "border-red-500/40 bg-red-950/20 hover:border-red-500/60"
                                   : "border-bg-700 bg-bg-900 hover:border-bg-600"
                               }`}
                             >
-                              {isBanned && (
-                                <div className="absolute left-3 top-3 rounded-full bg-red-500/20 border border-red-500/50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-400">
-                                  🚫 BANNED
-                                </div>
-                              )}
-                              <div className="absolute right-3 top-3 flex gap-1 opacity-0 transition group-hover:opacity-100">
-                                <button
-                                  onClick={() => toggleBanned(r.id!)}
-                                  className={`rounded px-2 py-1 text-[10px] font-semibold ${
-                                    isBanned
-                                      ? "bg-emerald-950 text-brand-emerald"
-                                      : "bg-red-950/60 text-brand-rose"
-                                  }`}
-                                >
-                                  {isBanned ? "↩ Aktifkan" : "🚫 Banned"}
-                                </button>
-                                <button
-                                  onClick={() => openEdit(r, idx)}
-                                  className="rounded bg-bg-700 px-2 py-1 text-[10px] text-brand-sky"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => remove(r)}
-                                  className="rounded bg-red-950/50 px-2 py-1 text-[10px] text-brand-rose"
-                                >
-                                  Hapus
-                                </button>
-                              </div>
-
-                              <div className={`mb-3 flex items-center gap-3 ${isBanned ? "mt-6" : ""}`}>
+                              {/* Header: icon + platform + email + menu on hover */}
+                              <div className="mb-1.5 flex items-center gap-2">
                                 <div
-                                  className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold text-white shadow-sm ${pi.bg} ${isBanned ? "grayscale" : ""}`}
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white ${pi.bg} ${
+                                    isBanned ? "grayscale" : ""
+                                  }`}
                                 >
                                   {pi.icon}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className={`text-sm font-bold ${isBanned ? "text-fg-400 line-through" : "text-fg-100"}`}>
-                                    {r.platform}
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className={`text-xs font-bold ${
+                                        isBanned ? "text-fg-500 line-through" : "text-fg-100"
+                                      }`}
+                                    >
+                                      {r.platform}
+                                    </span>
+                                    {isBanned && (
+                                      <span className="rounded bg-red-500/20 px-1 text-[8px] font-bold text-brand-rose">
+                                        🚫
+                                      </span>
+                                    )}
                                   </div>
                                   <button
                                     onClick={() => copyToClipboard(r.email, "Email")}
                                     title="Klik untuk copy email"
-                                    className={`block w-full truncate text-left text-xs hover:underline ${
+                                    className={`block w-full truncate text-left text-[11px] hover:underline ${
                                       isBanned ? "text-fg-500" : "text-brand-sky"
                                     }`}
                                   >
@@ -611,60 +772,97 @@ export default function AccountsPage() {
                                 </div>
                               </div>
 
-                              {r.username && (
-                                <button
-                                  onClick={() =>
-                                    copyToClipboard(r.username.replace(/^@/, ""), "Username")
-                                  }
-                                  title="Klik untuk copy username"
-                                  className="mb-2 inline-block rounded text-xs text-fg-400 hover:text-fg-200 hover:underline"
-                                >
-                                  @{r.username.replace(/^@/, "")}
-                                </button>
-                              )}
-
-                              <div className="mb-3 flex flex-wrap gap-1.5">
-                                {pUrl && (
-                                  <a
-                                    href={pUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
+                              {/* @username + actions inline */}
+                              <div className="mb-1.5 flex items-center justify-between gap-2">
+                                {r.username ? (
+                                  <button
+                                    onClick={() =>
+                                      copyToClipboard(r.username.replace(/^@/, ""), "Username")
+                                    }
+                                    title="Copy username"
+                                    className="truncate text-[10px] text-fg-400 hover:text-fg-100 hover:underline"
                                   >
-                                    🔗 Buka Profil
-                                  </a>
+                                    @{r.username.replace(/^@/, "")}
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-fg-600">no username</span>
                                 )}
-                                <button
-                                  onClick={() => copyToClipboard(r.email, "Email")}
-                                  className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
-                                >
-                                  📧 Copy Email
-                                </button>
-                                <button
-                                  onClick={() => copyToClipboard(r.password, "Password")}
-                                  className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
-                                >
-                                  🔑 Copy Password
-                                </button>
+                                <div className="flex gap-1">
+                                  {pUrl && (
+                                    <a
+                                      href={pUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Buka profil"
+                                      className="rounded border border-bg-700 bg-bg-800 px-1.5 py-0.5 text-[10px] hover:border-brand-sky"
+                                    >
+                                      🔗
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => copyToClipboard(r.email, "Email")}
+                                    title="Copy email"
+                                    className="rounded border border-bg-700 bg-bg-800 px-1.5 py-0.5 text-[10px] hover:border-brand-sky"
+                                  >
+                                    📧
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(r.password, "Password")}
+                                    title="Copy password"
+                                    className="rounded border border-bg-700 bg-bg-800 px-1.5 py-0.5 text-[10px] hover:border-brand-sky"
+                                  >
+                                    🔑
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-2 rounded-lg border border-bg-700 bg-bg-800/50 px-3 py-1.5 text-xs">
-                                <span className="text-[10px] text-fg-500">PWD</span>
-                                <span className="flex-1 font-mono tracking-wider text-fg-300">
+                              {/* Password inline row */}
+                              <div className="flex items-center gap-1.5 rounded border border-bg-700 bg-bg-800/50 px-2 py-1 text-[10px]">
+                                <span className="text-fg-500">PWD</span>
+                                <span className="flex-1 truncate font-mono tracking-wider text-fg-300">
                                   {showPw[r.id!] ? r.password : "••••••••"}
                                 </span>
                                 <button
                                   onClick={() =>
                                     setShowPw((p) => ({ ...p, [r.id!]: !p[r.id!] }))
                                   }
-                                  className="text-[10px] text-brand-sky hover:underline"
+                                  className="text-brand-sky hover:underline"
                                 >
-                                  {showPw[r.id!] ? "Sembunyikan" : "Lihat"}
+                                  {showPw[r.id!] ? "Hide" : "Lihat"}
+                                </button>
+                              </div>
+
+                              {/* Edit/Hapus/Banned — tampil saat hover */}
+                              <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+                                <button
+                                  onClick={() => toggleBanned(r.id!)}
+                                  title={isBanned ? "Aktifkan" : "Tandai banned"}
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+                                    isBanned
+                                      ? "bg-emerald-950 text-brand-emerald"
+                                      : "bg-red-950/60 text-brand-rose"
+                                  }`}
+                                >
+                                  {isBanned ? "↩" : "🚫"}
+                                </button>
+                                <button
+                                  onClick={() => openEdit(r, idx)}
+                                  title="Edit"
+                                  className="rounded bg-bg-700 px-1.5 py-0.5 text-[9px] text-brand-sky"
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  onClick={() => remove(r)}
+                                  title="Hapus"
+                                  className="rounded bg-red-950/50 px-1.5 py-0.5 text-[9px] text-brand-rose"
+                                >
+                                  🗑
                                 </button>
                               </div>
 
                               {r.notes && (
-                                <div className="mt-2 rounded bg-bg-800/50 p-2 text-[10px] italic text-fg-500">
+                                <div className="mt-1.5 truncate text-[9px] italic text-fg-600" title={r.notes}>
                                   📝 {r.notes}
                                 </div>
                               )}

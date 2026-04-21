@@ -39,7 +39,8 @@
       "Bash(curl -s -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM' 'https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/twitter_posts?select=posted_by,status,error,created_at&order=created_at.desc&limit=5')",
       "Bash(curl -s -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM' 'https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/twitter_connections?select=refresh_token,expires_at,scope')",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)[0]; print\\('has_refresh:', bool\\(d['refresh_token']\\)\\); print\\('expires_at:', d['expires_at']\\); print\\('scope:', d.get\\('scope'\\)\\)\")",
-      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\)[0]; console.log\\('has_refresh_token:', !!j.refresh_token\\); console.log\\('expires_at:', j.expires_at\\); console.log\\('scope:', j.scope\\); console.log\\('refresh_token_prefix:', \\(j.refresh_token||''\\).slice\\(0,20\\)+'...'\\)}\\);\")"
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\)[0]; console.log\\('has_refresh_token:', !!j.refresh_token\\); console.log\\('expires_at:', j.expires_at\\); console.log\\('scope:', j.scope\\); console.log\\('refresh_token_prefix:', \\(j.refresh_token||''\\).slice\\(0,20\\)+'...'\\)}\\);\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/report)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app"
