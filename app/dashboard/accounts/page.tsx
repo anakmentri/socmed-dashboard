@@ -49,6 +49,8 @@ export default function AccountsPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [banned, setBanned] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | "active" | "banned">("all");
+  const [search, setSearch] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<string>("");
 
   const loadBanned = async () => {
     try {
@@ -276,6 +278,16 @@ export default function AccountsPage() {
     input.click();
   };
 
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return toast(`${label} kosong`, true);
+    try {
+      navigator.clipboard.writeText(text);
+      toast(`${label} disalin`);
+    } catch {
+      toast("Gagal menyalin", true);
+    }
+  };
+
   const profileUrl = (r: SocAccount) => {
     if (!r.username) return "";
     const u = r.username.replace(/^@/, "");
@@ -350,12 +362,107 @@ export default function AccountsPage() {
         </div>
       </div>
 
+      {/* Search + Platform filter chips */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[240px] flex-1">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-500">
+            🔍
+          </span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari email, username, platform, atau anggota..."
+            className="w-full rounded-lg border border-bg-700 bg-bg-800 py-2 pl-9 pr-3 text-sm text-fg-100 outline-none focus:border-brand-sky"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-500 hover:text-fg-100"
+              title="Bersihkan"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {(search || platformFilter || filter !== "all") && (
+          <button
+            onClick={() => {
+              setSearch("");
+              setPlatformFilter("");
+              setFilter("all");
+            }}
+            className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:bg-bg-700 hover:text-fg-100"
+          >
+            ✕ Reset Semua
+          </button>
+        )}
+      </div>
+
+      {/* Platform filter chips with counts */}
+      <div className="mb-5 flex flex-wrap gap-1.5">
+        <button
+          onClick={() => setPlatformFilter("")}
+          className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+            platformFilter === ""
+              ? "border-brand-sky bg-brand-sky/10 text-brand-sky"
+              : "border-bg-700 bg-bg-800 text-fg-400 hover:border-bg-600"
+          }`}
+        >
+          Semua Platform ({rows.length})
+        </button>
+        {PLATFORMS.map((p) => {
+          const count = rows.filter((r) => r.platform === p).length;
+          if (count === 0) return null;
+          const pi = PLAT_ICONS[p];
+          return (
+            <button
+              key={p}
+              onClick={() => setPlatformFilter(platformFilter === p ? "" : p)}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                platformFilter === p
+                  ? "border-brand-sky bg-brand-sky/10 text-brand-sky"
+                  : "border-bg-700 bg-bg-800 text-fg-400 hover:border-bg-600"
+              }`}
+            >
+              {pi && (
+                <span
+                  className={`flex h-4 w-4 items-center justify-center rounded text-[8px] font-bold text-white ${pi.bg}`}
+                >
+                  {pi.icon}
+                </span>
+              )}
+              {p} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       <div className="space-y-3">
         {team
           .filter((t) => !isMember || t.name === myName)
           .map((t) => {
-            const memberAccs = rows.filter((r) => r.owner === t.name);
-            const isOpen = !!expanded[t.name];
+            const memberAccs = rows
+              .filter((r) => r.owner === t.name)
+              .filter((r) => {
+                // banned/active filter
+                if (filter === "banned" && !banned[r.id!]) return false;
+                if (filter === "active" && banned[r.id!]) return false;
+                // platform filter
+                if (platformFilter && r.platform !== platformFilter) return false;
+                // search
+                if (search) {
+                  const q = search.toLowerCase();
+                  const hay = `${r.platform} ${r.username} ${r.email} ${r.notes} ${r.owner}`.toLowerCase();
+                  if (!hay.includes(q)) return false;
+                }
+                return true;
+              });
+            // Auto-open kalau filter/search aktif & ada hasil
+            const filterActive = !!(search || platformFilter || filter !== "all");
+            const isOpen = filterActive ? memberAccs.length > 0 : !!expanded[t.name];
+            // Hide member yg kosong saat filter aktif (untuk fokus)
+            if (filterActive && memberAccs.length === 0) return null;
             return (
               <div
                 key={t.username}
@@ -405,16 +512,13 @@ export default function AccountsPage() {
                 {isOpen && (
                   <div className="p-4">
                     {memberAccs.length === 0 ? (
-                      <div className="py-6 text-center text-sm text-fg-500">
-                        Belum ada akun yang terdaftar
+                      <div className="py-6 text-center">
+                        <div className="mb-2 text-3xl opacity-50">🐣</div>
+                        <div className="text-sm text-fg-500">Belum ada akun yang terdaftar</div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {memberAccs.filter((r) => {
-                          if (filter === "banned") return !!banned[r.id!];
-                          if (filter === "active") return !banned[r.id!];
-                          return true;
-                        }).map((r) => {
+                        {memberAccs.map((r) => {
                           const idx = rows.indexOf(r);
                           const pi = PLAT_ICONS[r.platform] || {
                             icon: r.platform.slice(0, 2),
@@ -463,7 +567,7 @@ export default function AccountsPage() {
 
                               <div className={`mb-3 flex items-center gap-3 ${isBanned ? "mt-6" : ""}`}>
                                 <div
-                                  className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold text-white ${pi.bg} ${isBanned ? "grayscale" : ""}`}
+                                  className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold text-white shadow-sm ${pi.bg} ${isBanned ? "grayscale" : ""}`}
                                 >
                                   {pi.icon}
                                 </div>
@@ -471,46 +575,73 @@ export default function AccountsPage() {
                                   <div className={`text-sm font-bold ${isBanned ? "text-fg-400 line-through" : "text-fg-100"}`}>
                                     {r.platform}
                                   </div>
-                                  <div className={`truncate text-xs ${isBanned ? "text-fg-500" : "text-brand-sky"}`}>
+                                  <button
+                                    onClick={() => copyToClipboard(r.email, "Email")}
+                                    title="Klik untuk copy email"
+                                    className={`block w-full truncate text-left text-xs hover:underline ${
+                                      isBanned ? "text-fg-500" : "text-brand-sky"
+                                    }`}
+                                  >
                                     {r.email}
-                                  </div>
+                                  </button>
                                 </div>
                               </div>
 
                               {r.username && (
-                                <div className="mb-2 text-xs text-fg-400">
-                                  @{r.username.replace(/^@/, "")}
-                                </div>
-                              )}
-
-                              {pUrl && (
-                                <a
-                                  href={pUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-bg-700 bg-bg-800 px-3 py-1 text-[11px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
+                                <button
+                                  onClick={() =>
+                                    copyToClipboard(r.username.replace(/^@/, ""), "Username")
+                                  }
+                                  title="Klik untuk copy username"
+                                  className="mb-2 inline-block rounded text-xs text-fg-400 hover:text-fg-200 hover:underline"
                                 >
-                                  🔗 Buka Profil
-                                </a>
+                                  @{r.username.replace(/^@/, "")}
+                                </button>
                               )}
 
-                              <div className="flex items-center gap-2 text-xs">
-                                <span className="font-mono tracking-wider text-fg-300">
+                              <div className="mb-3 flex flex-wrap gap-1.5">
+                                {pUrl && (
+                                  <a
+                                    href={pUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
+                                  >
+                                    🔗 Buka Profil
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => copyToClipboard(r.email, "Email")}
+                                  className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
+                                >
+                                  📧 Copy Email
+                                </button>
+                                <button
+                                  onClick={() => copyToClipboard(r.password, "Password")}
+                                  className="inline-flex items-center gap-1 rounded-full border border-bg-700 bg-bg-800 px-2.5 py-1 text-[10px] font-semibold text-fg-200 transition hover:border-brand-sky hover:text-brand-sky"
+                                >
+                                  🔑 Copy Password
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-2 rounded-lg border border-bg-700 bg-bg-800/50 px-3 py-1.5 text-xs">
+                                <span className="text-[10px] text-fg-500">PWD</span>
+                                <span className="flex-1 font-mono tracking-wider text-fg-300">
                                   {showPw[r.id!] ? r.password : "••••••••"}
                                 </span>
                                 <button
                                   onClick={() =>
                                     setShowPw((p) => ({ ...p, [r.id!]: !p[r.id!] }))
                                   }
-                                  className="rounded border border-bg-700 bg-bg-800 px-2 py-0.5 text-[10px] text-fg-400 transition hover:text-fg-100"
+                                  className="text-[10px] text-brand-sky hover:underline"
                                 >
                                   {showPw[r.id!] ? "Sembunyikan" : "Lihat"}
                                 </button>
                               </div>
 
                               {r.notes && (
-                                <div className="mt-2 text-[10px] italic text-fg-600">
-                                  {r.notes}
+                                <div className="mt-2 rounded bg-bg-800/50 p-2 text-[10px] italic text-fg-500">
+                                  📝 {r.notes}
                                 </div>
                               )}
                             </div>
@@ -523,6 +654,37 @@ export default function AccountsPage() {
               </div>
             );
           })}
+
+        {/* Global empty state when nothing matches filter */}
+        {(search || platformFilter || filter !== "all") &&
+          team
+            .filter((t) => !isMember || t.name === myName)
+            .every((t) => {
+              const accs = rows
+                .filter((r) => r.owner === t.name)
+                .filter((r) => {
+                  if (filter === "banned" && !banned[r.id!]) return false;
+                  if (filter === "active" && banned[r.id!]) return false;
+                  if (platformFilter && r.platform !== platformFilter) return false;
+                  if (search) {
+                    const q = search.toLowerCase();
+                    const hay = `${r.platform} ${r.username} ${r.email} ${r.notes} ${r.owner}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                  }
+                  return true;
+                });
+              return accs.length === 0;
+            }) && (
+            <div className="rounded-xl border border-bg-700 bg-bg-800 p-12 text-center">
+              <div className="mb-3 text-5xl opacity-50">🔍</div>
+              <div className="mb-1 text-sm font-semibold text-fg-300">
+                Tidak ada akun yang cocok
+              </div>
+              <div className="text-xs text-fg-500">
+                Coba ubah kata kunci pencarian atau filter platform
+              </div>
+            </div>
+          )}
       </div>
 
       <Modal
