@@ -77,48 +77,44 @@ export default function OverviewPage() {
   const totalUpload = irData.reduce((a, d) => a + (d.realisasi || 0), 0);
   const totalViews = irData.reduce((a, d) => a + (d.output || 0), 0);
 
+  const donePct = totalAktivitas ? Math.round((totalSelesai / totalAktivitas) * 100) : 0;
+
   const stats = [
     {
-      label: "Aktivitas",
+      label: "AKTIVITAS HARIAN",
       value: totalAktivitas,
       sub: `${dailyWork.length} kerja · ${reports.length} report · ${irData.length} input`,
       icon: "⚡",
-      accent: "from-sky-500/20 to-transparent",
+      border: "border-l-brand-sky",
       text: "text-brand-sky",
+      progress: null,
     },
     {
-      label: "Selesai",
+      label: "SELESAI",
       value: totalSelesai,
-      sub: totalAktivitas
-        ? `${Math.round((totalSelesai / totalAktivitas) * 100)}% done`
-        : "—",
+      sub: totalAktivitas ? `${donePct}% selesai` : "—",
       icon: "✓",
-      accent: "from-emerald-500/20 to-transparent",
+      border: "border-l-brand-emerald",
       text: "text-brand-emerald",
+      progress: donePct,
     },
     {
-      label: "Report",
+      label: "REPORT POSTING",
       value: reports.length,
-      sub: totalLinks ? `${totalLinks} link` : "—",
+      sub: totalLinks ? `${totalLinks} link dikirim` : "—",
       icon: "📋",
-      accent: "from-violet-500/20 to-transparent",
+      border: "border-l-brand-violet",
       text: "text-brand-violet",
+      progress: null,
     },
     {
-      label: "Total Upload",
-      value: fN(totalUpload),
-      sub: `${irData.length} entri`,
-      icon: "⬆",
-      accent: "from-orange-500/20 to-transparent",
-      text: "text-brand-orange",
-    },
-    {
-      label: "Total Views",
+      label: "TOTAL VIEWS",
       value: fN(totalViews),
-      sub: "jangkauan",
+      sub: `${fN(totalUpload)} upload`,
       icon: "👁",
-      accent: "from-amber-500/20 to-transparent",
+      border: "border-l-brand-amber",
       text: "text-brand-amber",
+      progress: null,
     },
   ];
 
@@ -204,22 +200,189 @@ export default function OverviewPage() {
         </button>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (
           <div
             key={s.label}
-            className="rounded-xl border border-bg-700 bg-bg-800 p-4 transition hover:border-bg-600"
+            className={`rounded-xl border border-bg-700 border-l-4 bg-bg-800 p-4 shadow-sm transition hover:shadow-md ${s.border}`}
           >
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
-                {s.label}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className={`mb-2 text-[11px] font-bold uppercase tracking-wider ${s.text}`}>
+                  {s.label}
+                </div>
+                <div className="text-2xl font-extrabold text-fg-100">{s.value}</div>
+                {s.progress !== null ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-700">
+                      <div
+                        className="h-full rounded-full bg-brand-emerald transition-all"
+                        style={{ width: `${s.progress}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-semibold text-fg-400">{s.progress}%</span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-fg-500">{s.sub}</div>
+                )}
               </div>
-              <div className={`text-base ${s.text}`}>{s.icon}</div>
+              <div className={`text-3xl opacity-30 ${s.text}`}>{s.icon}</div>
             </div>
-            <div className={`text-3xl font-extrabold ${s.text}`}>{s.value}</div>
-            <div className="mt-1 text-[11px] text-fg-500">{s.sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* SB-Admin style: 2-panel chart row */}
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Aktivitas Overview — bar chart per anggota */}
+        <div className="rounded-xl border border-bg-700 bg-bg-800 lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-bg-700 px-5 py-3">
+            <h4 className="text-sm font-bold text-brand-sky">📊 Aktivitas Overview</h4>
+            <span className="text-xs text-fg-500">Per anggota · hari ini</span>
+          </div>
+          <div className="p-5">
+            {(() => {
+              const memberStats = team
+                .map((t) => ({
+                  name: t.name,
+                  color: t.color,
+                  count:
+                    dailyWork.filter((w) => w.name === t.name).length +
+                    reports.filter((r) => r.name === t.name).length +
+                    irData.filter((d) => d.anggota === t.name).length,
+                }))
+                .filter((m) => m.count > 0)
+                .sort((a, b) => b.count - a.count);
+              const max = Math.max(1, ...memberStats.map((m) => m.count));
+              if (memberStats.length === 0) {
+                return (
+                  <div className="py-12 text-center text-sm text-fg-500">
+                    Belum ada aktivitas anggota hari ini
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-2.5">
+                  {memberStats.map((m) => {
+                    const pct = Math.round((m.count / max) * 100);
+                    return (
+                      <div key={m.name} className="flex items-center gap-3">
+                        <div className="w-20 truncate text-xs font-semibold text-fg-300">
+                          {m.name}
+                        </div>
+                        <div className="flex-1 overflow-hidden rounded-full bg-bg-700">
+                          <div
+                            className="flex h-5 items-center justify-end rounded-full px-2 text-[10px] font-bold text-white transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: m.color, minWidth: "32px" }}
+                          >
+                            {m.count}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Platform Distribution — donut-like */}
+        <div className="rounded-xl border border-bg-700 bg-bg-800">
+          <div className="flex items-center justify-between border-b border-bg-700 px-5 py-3">
+            <h4 className="text-sm font-bold text-brand-violet">🎯 Distribusi Sumber</h4>
+          </div>
+          <div className="p-5">
+            {(() => {
+              const sources = [
+                { name: "Pengerjaan", count: dailyWork.length, color: "#34d399" },
+                { name: "Report", count: reports.length, color: "#a78bfa" },
+                { name: "Input Report", count: irData.length, color: "#fbbf24" },
+              ].filter((s) => s.count > 0);
+              const total = sources.reduce((a, s) => a + s.count, 0);
+              if (total === 0) {
+                return (
+                  <div className="py-12 text-center text-sm text-fg-500">Belum ada data</div>
+                );
+              }
+              // SVG donut
+              const R = 60;
+              const C = 2 * Math.PI * R;
+              let offset = 0;
+              return (
+                <div className="flex flex-col items-center gap-4">
+                  <svg width="160" height="160" viewBox="0 0 160 160">
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r={R}
+                      fill="none"
+                      stroke="#1e293b"
+                      strokeWidth="22"
+                    />
+                    {sources.map((s) => {
+                      const len = (s.count / total) * C;
+                      const circle = (
+                        <circle
+                          key={s.name}
+                          cx="80"
+                          cy="80"
+                          r={R}
+                          fill="none"
+                          stroke={s.color}
+                          strokeWidth="22"
+                          strokeDasharray={`${len} ${C - len}`}
+                          strokeDashoffset={-offset}
+                          transform="rotate(-90 80 80)"
+                        />
+                      );
+                      offset += len;
+                      return circle;
+                    })}
+                    <text
+                      x="80"
+                      y="78"
+                      textAnchor="middle"
+                      className="fill-fg-100"
+                      fontSize="22"
+                      fontWeight="800"
+                    >
+                      {total}
+                    </text>
+                    <text
+                      x="80"
+                      y="96"
+                      textAnchor="middle"
+                      className="fill-fg-500"
+                      fontSize="10"
+                    >
+                      TOTAL
+                    </text>
+                  </svg>
+                  <div className="flex w-full flex-col gap-1.5 text-xs">
+                    {sources.map((s) => (
+                      <div key={s.name} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: s.color }}
+                          />
+                          <span className="text-fg-300">{s.name}</span>
+                        </div>
+                        <span className="font-semibold text-fg-100">
+                          {s.count}{" "}
+                          <span className="text-fg-500">
+                            ({Math.round((s.count / total) * 100)}%)
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       </div>
 
       <SectionHeader
