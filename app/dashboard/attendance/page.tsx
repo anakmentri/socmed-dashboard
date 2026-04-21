@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { useToast } from "@/components/Toast";
@@ -7,6 +7,8 @@ import { useSession } from "@/hooks/useSession";
 import { getDefaultTeam } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { today, initials, logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { setCached } from "@/lib/cache";
 
 type Status = "kerja" | "izin" | "off";
 
@@ -51,13 +53,33 @@ export default function AttendancePage() {
   const myName = session?.memberName || "";
 
   const [date, setDate] = useState(today());
-  const [records, setRecords] = useState<Record<string, AttendanceRecord>>({});
   const [editNote, setEditNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
 
-  useEffect(() => {
-    loadAttendance(date).then(setRecords);
-  }, [date]);
+  const cacheKey = `attendance_${date}`;
+  const {
+    data: recordsData,
+    refresh,
+    loading,
+    isStale,
+    mutate,
+  } = useCachedData<Record<string, AttendanceRecord>>({
+    key: cacheKey,
+    fetcher: () => loadAttendance(date),
+  });
+  const records = recordsData || {};
+  const setRecords = (
+    updater:
+      | Record<string, AttendanceRecord>
+      | ((prev: Record<string, AttendanceRecord>) => Record<string, AttendanceRecord>)
+  ) => {
+    const next =
+      typeof updater === "function"
+        ? (updater as (prev: Record<string, AttendanceRecord>) => Record<string, AttendanceRecord>)(records)
+        : updater;
+    mutate(next);
+    setCached(cacheKey, next);
+  };
 
   const setStatus = async (name: string, status: Status) => {
     const rec: AttendanceRecord = { name, status, note: records[name]?.note || "" };
@@ -87,7 +109,20 @@ export default function AttendancePage() {
 
   return (
     <PageShell title="Kehadiran" desc="Status kehadiran anggota tim per hari">
-      <DateNav value={date} onChange={setDate} />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <DateNav value={date} onChange={setDate} />
+        </div>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          className="mb-4 flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+        >
+          <span className={loading ? "animate-spin" : ""}>🔄</span>
+          {loading ? "..." : "Refresh"}
+          {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+        </button>
+      </div>
 
       {/* Summary */}
       <div className="mb-5 grid grid-cols-3 gap-3">

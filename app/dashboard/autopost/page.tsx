@@ -6,6 +6,8 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 type Connection = {
   id: number;
@@ -31,8 +33,6 @@ function AutoPostInner() {
   const { toast } = useToast();
   const sp = useSearchParams();
 
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [posts, setPosts] = useState<Post[]>([]);
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
@@ -42,29 +42,45 @@ function AutoPostInner() {
   const isMember = session?.role === "member";
   const myName = session?.memberName || (isAdmin ? "admin" : "");
 
+  const autopostKey = `autopost_${isMember ? myName : "all"}`;
+  const {
+    data: apData,
+    refresh,
+    loading: apLoading,
+    isStale: apStale,
+  } = useCachedData<{ connections: Connection[]; posts: Post[] }>({
+    key: autopostKey,
+    fetcher: async () => {
+      let connQ = supabase.from("twitter_connections").select("*").order("id");
+      let postQ = supabase
+        .from("twitter_posts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (isMember && myName) {
+        connQ = connQ.eq("owner_name", myName);
+        postQ = postQ.eq("posted_by", myName);
+      }
+      const [cData, pData] = await Promise.all([connQ, postQ]);
+      return {
+        connections: (cData.data as Connection[]) || [],
+        posts: (pData.data as Post[]) || [],
+      };
+    },
+  });
+  const connections: Connection[] = apData?.connections || [];
+  const posts: Post[] = apData?.posts || [];
+
   const load = async () => {
-    // Member: hanya lihat koneksi & post miliknya sendiri
-    // Admin: lihat semua
-    let connQ = supabase.from("twitter_connections").select("*").order("id");
-    let postQ = supabase
-      .from("twitter_posts")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (isMember && myName) {
-      connQ = connQ.eq("owner_name", myName);
-      postQ = postQ.eq("posted_by", myName);
-    }
-    const [cData, pData] = await Promise.all([connQ, postQ]);
-    setConnections((cData.data as Connection[]) || []);
-    setPosts((pData.data as Post[]) || []);
+    invalidateCache(autopostKey);
+    await refresh();
   };
 
   useEffect(() => {
-    load();
     if (sp.get("connected")) {
       toast(`Twitter @${sp.get("connected")} terhubung!`);
       window.history.replaceState({}, "", "/dashboard/autopost");
+      load();
     }
     if (sp.get("error")) {
       toast(`Error: ${sp.get("error")}`, true);
@@ -169,16 +185,27 @@ function AutoPostInner() {
               ? `Akun Twitter Kamu${connections.length > 0 ? ` (${connections.length})` : ""}`
               : `Akun Twitter Terhubung (${connections.length})`}
           </h3>
-          <button
-            onClick={connectTwitter}
-            className="rounded-lg bg-[#1DA1F2] px-4 py-2 text-sm font-bold text-white hover:opacity-90"
-          >
-            🐦 {isMember
-              ? connections.length > 0
-                ? "Re-connect Twitter"
-                : "Connect Twitter Kamu"
-              : `Connect Twitter untuk ${owner}`}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refresh}
+              disabled={apLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+            >
+              <span className={apLoading ? "animate-spin" : ""}>🔄</span>
+              {apLoading ? "..." : "Refresh"}
+              {apStale && !apLoading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+            </button>
+            <button
+              onClick={connectTwitter}
+              className="rounded-lg bg-[#1DA1F2] px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+            >
+              🐦 {isMember
+                ? connections.length > 0
+                  ? "Re-connect Twitter"
+                  : "Connect Twitter Kamu"
+                : `Connect Twitter untuk ${owner}`}
+            </button>
+          </div>
         </div>
 
         {connections.length === 0 ? (

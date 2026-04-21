@@ -28,7 +28,8 @@
       "Bash(curl -s -o /dev/null -w \"history=%{http_code} \" https://socmedanalytics.com/dashboard/history)",
       "Bash(curl -s -o /dev/null -w \"overview=%{http_code} \" https://socmedanalytics.com/dashboard)",
       "Bash(curl -s -o /dev/null -w \"attendance=%{http_code}\\\\n\" https://socmedanalytics.com/dashboard/attendance)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/accounts)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/accounts)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://socmedanalytics.com/dashboard/assets)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app"

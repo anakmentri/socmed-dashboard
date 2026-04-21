@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { Modal, FormRow, Field, inputCls } from "@/components/Modal";
@@ -20,6 +20,8 @@ import { supabase } from "@/lib/supabase";
 import { ReportItem } from "@/lib/types";
 import { getDefaultTeam } from "@/lib/auth";
 import { today, packReportContent, unpackReportContent, logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 const empty: ReportItem = {
   date: today(),
@@ -38,7 +40,6 @@ export default function ReportPage() {
   const { session } = useSession();
   const { toast } = useToast();
   const [date, setDate] = useState(today());
-  const [rows, setRows] = useState<Row[]>([]);
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: ReportItem; linksText: string }>({
     open: false,
     idx: -1,
@@ -49,30 +50,35 @@ export default function ReportPage() {
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";
 
+  const cacheKey = `report_${date}_${isMember ? myName : "all"}`;
+  const { data: rowsCached, refresh, loading, isStale } = useCachedData<Row[]>({
+    key: cacheKey,
+    fetcher: async () => {
+      let q = supabase.from("report_items").select("*").eq("date", date);
+      if (isMember) q = q.eq("name", myName);
+      const { data } = await q;
+      return ((data || []) as Array<{ id: number; date: string; name: string; title?: string; content: string; category?: string }>).map((r) => {
+        const u = unpackReportContent(r.content);
+        return {
+          id: r.id,
+          date: r.date,
+          name: r.name,
+          platform: u.platform || r.title || "",
+          type: (r.category as "post" | "komentar") || "post",
+          desc: u.desc,
+          links: u.links,
+          image: u.image,
+          notes: u.notes,
+        };
+      });
+    },
+  });
+  const rows: Row[] = rowsCached || [];
+
   const load = async () => {
-    let q = supabase.from("report_items").select("*").eq("date", date);
-    if (isMember) q = q.eq("name", myName);
-    const { data } = await q;
-    const unpacked: Row[] = ((data || []) as Array<{ id: number; date: string; name: string; title?: string; content: string; category?: string }>).map((r) => {
-      const u = unpackReportContent(r.content);
-      return {
-        id: r.id,
-        date: r.date,
-        name: r.name,
-        platform: u.platform || r.title || "",
-        type: (r.category as "post" | "komentar") || "post",
-        desc: u.desc,
-        links: u.links,
-        image: u.image,
-        notes: u.notes,
-      };
-    });
-    setRows(unpacked);
+    invalidateCache(cacheKey);
+    await refresh();
   };
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
 
   const openAdd = () =>
     setModal({
@@ -152,12 +158,23 @@ export default function ReportPage() {
         <div className="text-sm text-fg-300">
           Total: <span className="font-bold text-fg-100">{rows.length}</span> report
         </div>
-        <button
-          onClick={openAdd}
-          className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900"
-        >
-          + Tambah Report
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+          >
+            <span className={loading ? "animate-spin" : ""}>🔄</span>
+            {loading ? "..." : "Refresh"}
+            {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+          </button>
+          <button
+            onClick={openAdd}
+            className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900"
+          >
+            + Tambah Report
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">

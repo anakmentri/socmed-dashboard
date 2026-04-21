@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { Modal, FormRow, Field, inputCls } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
@@ -7,6 +7,8 @@ import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { Platform } from "@/lib/types";
 import { fN, logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 const empty: Platform = {
   name: "",
@@ -24,20 +26,25 @@ const empty: Platform = {
 export default function PlatformsPage() {
   const { toast } = useToast();
   const { session } = useSession();
-  const [rows, setRows] = useState<Platform[]>([]);
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: Platform }>({
     open: false,
     idx: -1,
     data: empty,
   });
 
+  const { data: rowsCached, refresh, loading, isStale } = useCachedData<Platform[]>({
+    key: "platforms_all",
+    fetcher: async () => {
+      const { data } = await supabase.from("platforms").select("*");
+      return (data as Platform[]) || [];
+    },
+  });
+  const rows: Platform[] = rowsCached || [];
+
   const load = async () => {
-    const { data } = await supabase.from("platforms").select("*");
-    setRows((data as Platform[]) || []);
+    invalidateCache("platforms_all");
+    await refresh();
   };
-  useEffect(() => {
-    load();
-  }, []);
 
   const openAdd = () => setModal({ open: true, idx: -1, data: empty });
   const openEdit = (r: Platform, i: number) => setModal({ open: true, idx: i, data: { ...r } });

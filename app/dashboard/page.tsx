@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
 import { DailyWork, IrData, ReportItem } from "@/lib/types";
 import { today, fN, initials, unpackReportContent } from "@/lib/utils";
 import { getDefaultTeam } from "@/lib/auth";
+import { useCachedData } from "@/hooks/useCachedData";
 
 type ReportRow = ReportItem;
 
@@ -23,31 +24,28 @@ function SectionHeader({ title, right }: { title: string; right?: React.ReactNod
 
 export default function OverviewPage() {
   const [date, setDate] = useState(today());
-  const [dailyWork, setDailyWork] = useState<DailyWork[]>([]);
-  const [irData, setIrData] = useState<IrData[]>([]);
-  const [reports, setReports] = useState<ReportRow[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const team = getDefaultTeam();
 
-  useEffect(() => {
-    const load = async () => {
+  const { data: overviewData, refresh, loading, isStale } = useCachedData<{
+    dailyWork: DailyWork[];
+    irData: IrData[];
+    reports: ReportRow[];
+  }>({
+    key: `overview_${date}`,
+    fetcher: async () => {
       const [dw, ir, ri] = await Promise.all([
         supabase.from("daily_work").select("*").eq("date", date),
         supabase.from("ir_data").select("*").eq("date", date),
         supabase.from("report_items").select("*").eq("date", date),
       ]);
-      setDailyWork((dw.data as DailyWork[]) || []);
-      setIrData((ir.data as IrData[]) || []);
       const rawReports = (ri.data || []) as Array<{
-        id: number;
-        date: string;
-        name: string;
-        title?: string;
-        content: string;
-        category?: string;
+        id: number; date: string; name: string; title?: string; content: string; category?: string;
       }>;
-      setReports(
-        rawReports.map((r) => {
+      return {
+        dailyWork: (dw.data as DailyWork[]) || [],
+        irData: (ir.data as IrData[]) || [],
+        reports: rawReports.map((r) => {
           const u = unpackReportContent(r.content);
           return {
             id: r.id,
@@ -60,11 +58,14 @@ export default function OverviewPage() {
             image: u.image,
             notes: u.notes,
           };
-        })
-      );
-    };
-    load();
-  }, [date]);
+        }),
+      };
+    },
+  });
+
+  const dailyWork = overviewData?.dailyWork || [];
+  const irData = overviewData?.irData || [];
+  const reports = overviewData?.reports || [];
 
   const doneCount = dailyWork.filter((w) => w.status === "done").length;
   const totalAktivitas = dailyWork.length + reports.length + irData.length;
@@ -187,7 +188,21 @@ export default function OverviewPage() {
 
   return (
     <PageShell title="Dashboard Overview" desc="Ringkasan performa semua platform sosial media">
-      <DateNav value={date} onChange={setDate} />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <DateNav value={date} onChange={setDate} />
+        </div>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          className="mb-4 flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+          title={isStale ? "Data mungkin sudah lama" : "Data fresh"}
+        >
+          <span className={loading ? "animate-spin" : ""}>🔄</span>
+          {loading ? "Refresh..." : "Refresh"}
+          {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+        </button>
+      </div>
 
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         {stats.map((s) => (

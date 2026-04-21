@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { Modal, FormRow, Field, inputCls } from "@/components/Modal";
@@ -8,6 +8,8 @@ import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { IrData } from "@/lib/types";
 import { today, fN, fmtIdDate, logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 const emptyIr: IrData = {
   date: today(),
@@ -31,7 +33,6 @@ export default function InputReportPage() {
   const { session } = useSession();
   const { toast } = useToast();
   const [date, setDate] = useState(today());
-  const [rows, setRows] = useState<IrData[]>([]);
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: IrData }>({
     open: false,
     idx: -1,
@@ -40,16 +41,22 @@ export default function InputReportPage() {
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";
 
+  const cacheKey = `ir_data_${date}_${isMember ? myName : "all"}`;
+  const { data: rowsCached, refresh, loading, isStale } = useCachedData<IrData[]>({
+    key: cacheKey,
+    fetcher: async () => {
+      let q = supabase.from("ir_data").select("*").eq("date", date);
+      if (isMember) q = q.eq("anggota", myName);
+      const { data } = await q;
+      return (data as IrData[]) || [];
+    },
+  });
+  const rows: IrData[] = rowsCached || [];
+
   const load = async () => {
-    let q = supabase.from("ir_data").select("*").eq("date", date);
-    if (isMember) q = q.eq("anggota", myName);
-    const { data } = await q;
-    setRows((data as IrData[]) || []);
+    invalidateCache(cacheKey);
+    await refresh();
   };
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
 
   const openAdd = () =>
     setModal({
@@ -101,12 +108,23 @@ export default function InputReportPage() {
           upload ·{" "}
           <span className="text-brand-sky">{fN(rows.reduce((a, r) => a + r.output, 0))}</span> views
         </div>
-        <button
-          onClick={openAdd}
-          className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900 hover:opacity-90"
-        >
-          + Tambah Data
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+          >
+            <span className={loading ? "animate-spin" : ""}>🔄</span>
+            {loading ? "..." : "Refresh"}
+            {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+          </button>
+          <button
+            onClick={openAdd}
+            className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-bold text-bg-900 hover:opacity-90"
+          >
+            + Tambah Data
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-bg-700 bg-bg-800">

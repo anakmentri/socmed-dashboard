@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
 import { getDefaultTeam } from "@/lib/auth";
 import { today, initials, unpackReportContent, fN } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
 
 type Entry = {
   id: string;
@@ -21,15 +22,18 @@ type Entry = {
 export default function HistoryPage() {
   const team = getDefaultTeam();
   const [date, setDate] = useState(today());
-  const [entries, setEntries] = useState<Entry[]>([]);
   const [userFilter, setUserFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
+  const {
+    data: entries,
+    loading,
+    refresh,
+    isStale,
+  } = useCachedData<Entry[]>({
+    key: `history_${date}`,
+    fetcher: async () => {
       const [dw, ri, ir, as_, sa, lg] = await Promise.all([
         supabase.from("daily_work").select("*").eq("date", date),
         supabase.from("report_items").select("*").eq("date", date),
@@ -196,13 +200,11 @@ export default function HistoryPage() {
         return true;
       });
       deduped.sort((a, b) => (a.ts < b.ts ? 1 : -1));
-      setEntries(deduped);
-      setLoading(false);
-    };
-    load();
-  }, [date]);
+      return deduped;
+    },
+  });
 
-  const filtered = entries.filter((r) => {
+  const filtered = (entries || []).filter((r) => {
     if (userFilter && r.who !== userFilter) return false;
     if (actionFilter && !r.action.toLowerCase().includes(actionFilter.toLowerCase())) return false;
     if (search) {
@@ -218,8 +220,8 @@ export default function HistoryPage() {
     return true;
   });
 
-  const users = [...new Set(entries.map((r) => r.who).filter(Boolean))].sort();
-  const actions = [...new Set(entries.map((r) => r.action).filter(Boolean))].sort();
+  const users = [...new Set((entries || []).map((r) => r.who).filter(Boolean))].sort();
+  const actions = [...new Set((entries || []).map((r) => r.action).filter(Boolean))].sort();
 
   return (
     <PageShell title="History Aktivitas" desc="Riwayat semua aktivitas anggota tim">
@@ -284,6 +286,16 @@ export default function HistoryPage() {
         <span className="rounded-full bg-bg-800 border border-bg-700 px-3 py-1 text-xs text-fg-400">
           <strong className="text-fg-100">{filtered.length}</strong> aktivitas
         </span>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+          title={isStale ? "Data mungkin lama" : "Data fresh"}
+        >
+          <span className={loading ? "animate-spin" : ""}>🔄</span>
+          {loading ? "..." : "Refresh"}
+          {isStale && !loading && <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />}
+        </button>
       </div>
 
       {loading ? (

@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import { SocAccount } from "@/lib/types";
 import { getDefaultTeam } from "@/lib/auth";
 import { logAs } from "@/lib/utils";
+import { useCachedData } from "@/hooks/useCachedData";
+import { invalidateCache } from "@/lib/cache";
 
 const PLATFORMS = [
   "Instagram",
@@ -44,7 +46,6 @@ export default function AccountsPage() {
   const { session } = useSession();
   const { toast } = useToast();
   const team = getDefaultTeam();
-  const [rows, setRows] = useState<SocAccount[]>([]);
   const [showPw, setShowPw] = useState<Record<number, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [banned, setBanned] = useState<Record<number, boolean>>({});
@@ -115,16 +116,27 @@ export default function AccountsPage() {
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";
 
+  const accountsKey = isMember ? `accounts_${myName}` : "accounts_all";
+  const {
+    data: rowsCached,
+    loading: accountsLoading,
+    refresh: refreshAccounts,
+    isStale: accountsStale,
+  } = useCachedData<SocAccount[]>({
+    key: accountsKey,
+    fetcher: async () => {
+      let q = supabase.from("soc_accounts").select("*");
+      if (isMember) q = q.eq("owner", myName);
+      const { data } = await q;
+      return (data as SocAccount[]) || [];
+    },
+  });
+  const rows: SocAccount[] = rowsCached || [];
+
   const load = async () => {
-    let q = supabase.from("soc_accounts").select("*");
-    if (isMember) q = q.eq("owner", myName);
-    const { data } = await q;
-    setRows((data as SocAccount[]) || []);
+    invalidateCache(accountsKey);
+    await refreshAccounts();
   };
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const openAddFor = (name: string) =>
     setBatch({ open: true, owner: name, rows: [{ ...emptyBatchRow }] });
@@ -335,6 +347,18 @@ export default function AccountsPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={refreshAccounts}
+            disabled={accountsLoading}
+            className="flex items-center gap-1.5 rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:border-bg-600 hover:text-fg-100 disabled:opacity-50"
+            title={accountsStale ? "Data mungkin lama" : "Data fresh"}
+          >
+            <span className={accountsLoading ? "animate-spin" : ""}>🔄</span>
+            {accountsLoading ? "..." : "Refresh"}
+            {accountsStale && !accountsLoading && (
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
+            )}
+          </button>
           <button
             onClick={exportAccounts}
             className="rounded-lg border border-bg-700 bg-bg-800 px-4 py-2 text-xs font-semibold text-fg-300 hover:border-bg-600"
