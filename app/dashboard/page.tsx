@@ -121,6 +121,38 @@ export default function OverviewPage() {
 
   const platformsInIr = Array.from(new Set(irData.map((d) => d.sosmed).filter(Boolean)));
 
+  // Gabungan platform dari reports + IR + dailyWork
+  const allPlatformsUsed = Array.from(
+    new Set(
+      [
+        ...reports.map((r) => r.platform),
+        ...irData.map((d) => d.sosmed),
+        ...dailyWork.map((w) => w.platform),
+      ].filter(Boolean)
+    )
+  );
+
+  const PLATFORM_COLORS: Record<string, string> = {
+    Instagram: "#ec4899",
+    Facebook: "#2563eb",
+    "X (Twitter)": "#0f172a",
+    TikTok: "#06b6d4",
+    YouTube: "#ef4444",
+    LinkedIn: "#0a66c2",
+    Telegram: "#38bdf8",
+    Semprot: "#f43f5e",
+  };
+  const PLATFORM_ICONS: Record<string, string> = {
+    Instagram: "IG",
+    Facebook: "FB",
+    "X (Twitter)": "X",
+    TikTok: "TT",
+    YouTube: "YT",
+    LinkedIn: "LI",
+    Telegram: "TG",
+    Semprot: "SP",
+  };
+
   type Row = {
     anggota: string;
     platform: string;
@@ -570,31 +602,103 @@ export default function OverviewPage() {
         })}
       </div>
 
-      {platformsInIr.length > 0 && (
+      {allPlatformsUsed.length > 0 && (
         <>
-          <SectionHeader title="Ringkasan per Platform (Input Report)" />
-          <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-            {platformsInIr.map((p) => {
+          <SectionHeader
+            title="📱 Ringkasan Platform dari Tim"
+            right={`${allPlatformsUsed.length} platform aktif hari ini`}
+          />
+          <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {allPlatformsUsed.map((p) => {
+              const pReports = reports.filter((r) => r.platform === p);
               const pIr = irData.filter((d) => d.sosmed === p);
-              const pReal = pIr.reduce((a, d) => a + (d.realisasi || 0), 0);
-              const pOut = pIr.reduce((a, d) => a + (d.output || 0), 0);
-              const members = Array.from(new Set(pIr.map((d) => d.anggota)));
+              const pDw = dailyWork.filter((w) => w.platform === p);
+              const totalLinks = pReports.reduce((a, r) => a + (r.links?.length || 0), 0);
+              const totalUpload = pIr.reduce((a, d) => a + (d.realisasi || 0), 0);
+              const totalViews = pIr.reduce((a, d) => a + (d.output || 0), 0);
+              const members = Array.from(
+                new Set([
+                  ...pReports.map((r) => r.name),
+                  ...pIr.map((d) => d.anggota),
+                  ...pDw.map((w) => w.name),
+                ].filter(Boolean))
+              );
+              const totalActivity = pReports.length + pIr.length + pDw.length;
+              const platColor = PLATFORM_COLORS[p] || "#64748b";
+              const platIcon = PLATFORM_ICONS[p] || p.slice(0, 2).toUpperCase();
               return (
                 <div
                   key={p}
-                  className="rounded-xl border border-bg-700 bg-bg-800 p-4 transition hover:border-bg-600"
+                  className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800 transition hover:border-bg-600"
                 >
-                  <div className="mb-3 text-sm font-bold text-fg-100">{p}</div>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="text-fg-500">Upload</span>
-                    <strong className="text-brand-violet">{fN(pReal)}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-fg-500">Views</span>
-                    <strong className="text-brand-sky">{fN(pOut)}</strong>
-                  </div>
-                  <div className="mt-3 border-t border-bg-700 pt-2 text-[10px] text-fg-600">
-                    {members.join(", ")}
+                  {/* Header with platform color strip */}
+                  <div className="h-1" style={{ backgroundColor: platColor }} />
+                  <div className="p-4">
+                    <div className="mb-3 flex items-center gap-2.5">
+                      <div
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm"
+                        style={{ backgroundColor: platColor }}
+                      >
+                        {platIcon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-sm font-bold text-fg-100">{p}</div>
+                        <div className="text-[10px] text-fg-500">
+                          {totalActivity} aktivitas
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-2 grid grid-cols-2 gap-1.5 text-[11px]">
+                      <div className="rounded bg-indigo-500/10 px-2 py-1">
+                        <div className="text-[9px] uppercase text-fg-500">📋 Report</div>
+                        <div className="font-bold text-brand-violet">{pReports.length}</div>
+                      </div>
+                      <div className="rounded bg-sky-500/10 px-2 py-1">
+                        <div className="text-[9px] uppercase text-fg-500">🔗 Link</div>
+                        <div className="font-bold text-brand-sky">{fN(totalLinks)}</div>
+                      </div>
+                      <div className="rounded bg-amber-500/10 px-2 py-1">
+                        <div className="text-[9px] uppercase text-fg-500">⬆ Upload</div>
+                        <div className="font-bold text-brand-amber">{fN(totalUpload)}</div>
+                      </div>
+                      <div className="rounded bg-emerald-500/10 px-2 py-1">
+                        <div className="text-[9px] uppercase text-fg-500">👁 Views</div>
+                        <div className="font-bold text-brand-emerald">{fN(totalViews)}</div>
+                      </div>
+                    </div>
+
+                    {members.length > 0 && (
+                      <div className="border-t border-bg-700 pt-2">
+                        <div className="mb-1 text-[9px] uppercase tracking-wider text-fg-500">
+                          👥 Kontributor ({members.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {members.slice(0, 6).map((name) => {
+                            const t = team.find((tm) => tm.name === name);
+                            return (
+                              <span
+                                key={name}
+                                className="flex items-center gap-1 rounded-full bg-bg-700 px-1.5 py-0.5 text-[9px]"
+                              >
+                                <span
+                                  className="flex h-3 w-3 items-center justify-center rounded-full text-[7px] font-bold text-white"
+                                  style={{ backgroundColor: t?.color || "#64748b" }}
+                                >
+                                  {name[0]}
+                                </span>
+                                {name}
+                              </span>
+                            );
+                          })}
+                          {members.length > 6 && (
+                            <span className="text-[9px] text-fg-500 self-center">
+                              +{members.length - 6}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
