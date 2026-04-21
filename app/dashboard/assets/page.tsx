@@ -88,23 +88,32 @@ export default function AssetsPage() {
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
   const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
+  const [showAllDates, setShowAllDates] = useState(false);
+  const [search, setSearch] = useState("");
   const filtered = rows.filter((r) => {
-    if (r.date !== date) return false;
+    if (!showAllDates && r.date !== date) return false;
     if (typeFilter !== "all" && r.type !== typeFilter) return false;
     if (providerFilter !== "all") {
       if (providerFilter === "Lainnya") {
         if (r.provider === "Tlegu" || r.provider === "Rully") return false;
       } else if (r.provider !== providerFilter) return false;
     }
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = `${r.title} ${r.caption} ${r.provider} ${r.notes}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
-  const fotoCount = rows.filter((r) => r.date === date && r.type === "foto").length;
-  const videoCount = rows.filter((r) => r.date === date && r.type === "video").length;
-  const tleguCount = rows.filter((r) => r.date === date && r.provider === "Tlegu").length;
-  const rullyCount = rows.filter((r) => r.date === date && r.provider === "Rully").length;
-  const lainnyaCount = rows.filter(
-    (r) => r.date === date && r.provider !== "Tlegu" && r.provider !== "Rully"
+  const baseRows = showAllDates ? rows : rows.filter((r) => r.date === date);
+  const fotoCount = baseRows.filter((r) => r.type === "foto").length;
+  const videoCount = baseRows.filter((r) => r.type === "video").length;
+  const tleguCount = baseRows.filter((r) => r.provider === "Tlegu").length;
+  const rullyCount = baseRows.filter((r) => r.provider === "Rully").length;
+  const lainnyaCount = baseRows.filter(
+    (r) => r.provider !== "Tlegu" && r.provider !== "Rully"
   ).length;
+  const totalAllDates = rows.length;
 
   const openAdd = () => {
     if (!canUpload) {
@@ -176,7 +185,50 @@ export default function AssetsPage() {
 
   return (
     <PageShell title="Asset Library" desc="Database asset postingan: gambar, link, dan caption siap pakai">
-      <DateNav value={date} onChange={setDate} />
+      {!showAllDates && <DateNav value={date} onChange={setDate} />}
+
+      {/* Toggle: Tampil per tanggal / Semua tanggal + search */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex rounded-lg border border-bg-700 bg-bg-800 p-1">
+          <button
+            onClick={() => setShowAllDates(false)}
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${
+              !showAllDates ? "bg-brand-sky text-bg-900" : "text-fg-400 hover:text-fg-100"
+            }`}
+          >
+            📅 Tanggal ini
+          </button>
+          <button
+            onClick={() => setShowAllDates(true)}
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${
+              showAllDates ? "bg-brand-sky text-bg-900" : "text-fg-400 hover:text-fg-100"
+            }`}
+          >
+            🗂 Semua Tanggal ({totalAllDates})
+          </button>
+        </div>
+
+        <div className="relative min-w-[220px] flex-1">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-500">
+            🔍
+          </span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari judul, caption, uploader..."
+            className="w-full rounded-lg border border-bg-700 bg-bg-800 py-2 pl-9 pr-3 text-sm text-fg-100 outline-none focus:border-brand-sky"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-500 hover:text-fg-100"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Provider tabs — pisahkan postingan Tlegu & Rully */}
       <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -322,7 +374,22 @@ export default function AssetsPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.length === 0 && (
           <div className="rounded-xl border border-bg-700 bg-bg-800 p-8 text-center text-fg-500 md:col-span-2 xl:col-span-3">
-            Belum ada asset {providerFilter !== "all" ? `dari ${providerFilter} ` : ""}untuk tanggal {fmtIdDate(date)}
+            <div className="mb-2 text-4xl opacity-50">📦</div>
+            <div className="text-sm font-semibold">
+              {showAllDates
+                ? search || providerFilter !== "all" || typeFilter !== "all"
+                  ? "Tidak ada hasil pencarian"
+                  : "Belum ada asset sama sekali"
+                : `Belum ada asset ${providerFilter !== "all" ? `dari ${providerFilter} ` : ""}untuk tanggal ${fmtIdDate(date)}`}
+            </div>
+            {!showAllDates && (
+              <button
+                onClick={() => setShowAllDates(true)}
+                className="mt-3 text-xs text-brand-sky hover:underline"
+              >
+                🗂 Lihat semua tanggal ({totalAllDates} total)
+              </button>
+            )}
           </div>
         )}
         {filtered.map((r, i) => (
@@ -359,7 +426,15 @@ export default function AssetsPage() {
                 >
                   {r.type === "video" ? "🎬 VIDEO" : "📷 FOTO"}
                 </span>
-                <span className="text-[10px] text-fg-500">{fmtIdDate(r.date)}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    showAllDates
+                      ? "bg-bg-700 font-semibold text-fg-200"
+                      : "text-fg-500"
+                  }`}
+                >
+                  📅 {fmtIdDate(r.date)}
+                </span>
                 <span
                   className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
                     r.provider === "Tlegu"
