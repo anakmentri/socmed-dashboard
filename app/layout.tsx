@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tim Dashboard",
-  description: "Social media team dashboard",
+  title: "SocMed Analytics Dashboard",
+  description: "Dashboard analytics & manajemen sosial media tim",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/apple-icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 type Item = {
   id: number;
@@ -11,17 +12,6 @@ type Item = {
   stok: number;
   terjual: number;
 };
-
-const SEED: Item[] = [
-  { id: 1, nama: 'Kopi Sachet', satuan: 'bks', modal: 1200, jual: 2000, stok: 150, terjual: 42 },
-  { id: 2, nama: 'Gorengan Tempe', satuan: 'pcs', modal: 700, jual: 1500, stok: 60, terjual: 38 },
-  { id: 3, nama: 'Nasi Bungkus', satuan: 'pcs', modal: 8000, jual: 12000, stok: 25, terjual: 14 },
-  { id: 4, nama: 'Teh Botol', satuan: 'btl', modal: 3800, jual: 5000, stok: 48, terjual: 21 },
-  { id: 5, nama: 'Rokok Ketengan', satuan: 'btg', modal: 1800, jual: 2500, stok: 200, terjual: 95 },
-  { id: 6, nama: 'Mie Rebus', satuan: 'porsi', modal: 4500, jual: 8000, stok: 30, terjual: 12 },
-  { id: 7, nama: 'Es Teh', satuan: 'gls', modal: 1500, jual: 4000, stok: 80, terjual: 55 },
-  { id: 8, nama: 'Kerupuk', satuan: 'bks', modal: 600, jual: 1000, stok: 120, terjual: 34 },
-];
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
@@ -38,13 +28,36 @@ type Draft = {
 const EMPTY: Draft = { id: null, nama: '', satuan: 'pcs', modal: '', jual: '', stok: '' };
 
 export default function WarungPage() {
-  const [items, setItems] = useState<Item[]>(SEED);
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'semua' | 'laris' | 'rugi-tipis' | 'stok-menipis'>('semua');
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [showForm, setShowForm] = useState(false);
   const [sellQty, setSellQty] = useState<Record<number, string>>({});
   const [toast, setToast] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('warung_items')
+        .select('*')
+        .order('id', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        setError(error.message);
+      } else {
+        setItems((data ?? []) as Item[]);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const view = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,16 +87,42 @@ export default function WarungPage() {
     setTimeout(() => setToast(''), 2200);
   };
 
-  const jual = (it: Item) => {
+  const jual = async (it: Item) => {
     const raw = sellQty[it.id] ?? '1';
     const qty = Number(raw);
     if (!Number.isFinite(qty) || qty <= 0) return alert('Jumlah tidak valid.');
     if (qty > it.stok) return alert('Stok tidak cukup.');
+
+    setBusy(true);
+    const newStok = it.stok - qty;
+    const newTerjual = it.terjual + qty;
+    const untung = (it.jual - it.modal) * qty;
+
+    const { error: updErr } = await supabase
+      .from('warung_items')
+      .update({ stok: newStok, terjual: newTerjual, updated_at: new Date().toISOString() })
+      .eq('id', it.id);
+
+    if (updErr) {
+      setBusy(false);
+      return alert('Gagal simpan transaksi: ' + updErr.message);
+    }
+
+    await supabase.from('warung_sales').insert({
+      item_id: it.id,
+      nama: it.nama,
+      qty,
+      modal: it.modal,
+      jual: it.jual,
+      untung,
+    });
+
     setItems((xs) =>
-      xs.map((x) => (x.id === it.id ? { ...x, stok: x.stok - qty, terjual: x.terjual + qty } : x)),
+      xs.map((x) => (x.id === it.id ? { ...x, stok: newStok, terjual: newTerjual } : x)),
     );
     setSellQty((s) => ({ ...s, [it.id]: '' }));
-    flash(`Laku ${qty} ${it.satuan} ${it.nama} — untung ${rupiah((it.jual - it.modal) * qty)}`);
+    setBusy(false);
+    flash(`Laku ${qty} ${it.satuan} ${it.nama} — untung ${rupiah(untung)}`);
   };
 
   const startAdd = () => {
@@ -103,12 +142,17 @@ export default function WarungPage() {
     setShowForm(true);
   };
 
-  const hapus = (id: number) => {
+  const hapus = async (id: number) => {
     if (!confirm('Hapus barang ini?')) return;
+    setBusy(true);
+    const { error } = await supabase.from('warung_items').delete().eq('id', id);
+    setBusy(false);
+    if (error) return alert('Gagal hapus: ' + error.message);
     setItems((xs) => xs.filter((x) => x.id !== id));
+    flash('Barang dihapus.');
   };
 
-  const simpan = () => {
+  const simpan = async () => {
     const nama = draft.nama.trim();
     const satuan = draft.satuan.trim() || 'pcs';
     const modal = Number(draft.modal);
@@ -120,11 +164,24 @@ export default function WarungPage() {
     if (!Number.isFinite(stok) || stok < 0) return alert('Stok tidak valid.');
     if (hjual < modal && !confirm('Harga jual di bawah modal. Tetap simpan?')) return;
 
+    setBusy(true);
     if (draft.id === null) {
-      const nextId = Math.max(0, ...items.map((x) => x.id)) + 1;
-      setItems((xs) => [...xs, { id: nextId, nama, satuan, modal, jual: hjual, stok, terjual: 0 }]);
+      const { data, error } = await supabase
+        .from('warung_items')
+        .insert({ nama, satuan, modal, jual: hjual, stok, terjual: 0 })
+        .select()
+        .single();
+      setBusy(false);
+      if (error || !data) return alert('Gagal simpan: ' + (error?.message ?? 'unknown'));
+      setItems((xs) => [...xs, data as Item]);
       flash(`"${nama}" ditambahkan.`);
     } else {
+      const { error } = await supabase
+        .from('warung_items')
+        .update({ nama, satuan, modal, jual: hjual, stok, updated_at: new Date().toISOString() })
+        .eq('id', draft.id);
+      setBusy(false);
+      if (error) return alert('Gagal update: ' + error.message);
       setItems((xs) =>
         xs.map((x) => (x.id === draft.id ? { ...x, nama, satuan, modal, jual: hjual, stok } : x)),
       );
@@ -149,11 +206,22 @@ export default function WarungPage() {
           </div>
           <button
             onClick={startAdd}
-            className="rounded-full bg-stone-900 px-5 py-2.5 text-sm font-medium text-amber-50 shadow-md transition hover:bg-stone-800"
+            disabled={busy}
+            className="rounded-full bg-stone-900 px-5 py-2.5 text-sm font-medium text-amber-50 shadow-md transition hover:bg-stone-800 disabled:opacity-50"
           >
             + Barang Baru
           </button>
         </header>
+
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <b>Gagal load data:</b> {error}
+            <div className="mt-2 text-xs text-red-600">
+              Pastikan tabel <code>warung_items</code> sudah dibuat di Supabase (jalankan{' '}
+              <code>supabase_warung.sql</code>).
+            </div>
+          </div>
+        )}
 
         <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Nilai Stok (Modal)" value={rupiah(ringkasan.modalStok)} tone="neutral" />
@@ -200,106 +268,118 @@ export default function WarungPage() {
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2">
-          {view.map((it) => {
-            const margin = it.jual - it.modal;
-            const marginPct = it.jual > 0 ? (margin / it.jual) * 100 : 0;
-            const untungItem = margin * it.terjual;
-            const stokLow = it.stok > 0 && it.stok <= 20;
-            const habis = it.stok <= 0;
-            return (
-              <article
-                key={it.id}
-                className="group rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold text-stone-900">{it.nama}</h3>
-                    <p className="text-xs text-stone-500">per {it.satuan}</p>
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-400">
+            Memuat data dari Supabase...
+          </div>
+        ) : (
+          <section className="grid gap-3 sm:grid-cols-2">
+            {view.map((it) => {
+              const margin = it.jual - it.modal;
+              const marginPct = it.jual > 0 ? (margin / it.jual) * 100 : 0;
+              const untungItem = margin * it.terjual;
+              const stokLow = it.stok > 0 && it.stok <= 20;
+              const habis = it.stok <= 0;
+              return (
+                <article
+                  key={it.id}
+                  className="group rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:shadow-md"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-semibold text-stone-900">{it.nama}</h3>
+                      <p className="text-xs text-stone-500">per {it.satuan}</p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {habis && (
+                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
+                          Habis
+                        </span>
+                      )}
+                      {stokLow && (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+                          Menipis
+                        </span>
+                      )}
+                      {margin <= 0 && (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                          Rugi
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-1.5">
-                    {habis && (
-                      <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
-                        Habis
-                      </span>
-                    )}
-                    {stokLow && (
-                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">
-                        Menipis
-                      </span>
-                    )}
-                    {margin <= 0 && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                        Rugi
-                      </span>
-                    )}
+
+                  <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+                    <PriceBlock label="Modal" value={rupiah(it.modal)} muted />
+                    <PriceBlock label="Jual" value={rupiah(it.jual)} accent />
+                    <PriceBlock
+                      label={`Margin ${marginPct.toFixed(0)}%`}
+                      value={rupiah(margin)}
+                      profit={margin > 0}
+                      loss={margin <= 0}
+                    />
                   </div>
-                </div>
 
-                <div className="mb-3 grid grid-cols-3 gap-2 text-center">
-                  <PriceBlock label="Modal" value={rupiah(it.modal)} muted />
-                  <PriceBlock label="Jual" value={rupiah(it.jual)} accent />
-                  <PriceBlock
-                    label={`Margin ${marginPct.toFixed(0)}%`}
-                    value={rupiah(margin)}
-                    profit={margin > 0}
-                    loss={margin <= 0}
-                  />
-                </div>
+                  <div className="mb-3 flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-xs">
+                    <span className="text-stone-500">
+                      Stok: <b className="text-stone-900">{it.stok}</b> · Terjual:{' '}
+                      <b className="text-stone-900">{it.terjual}</b>
+                    </span>
+                    <span
+                      className={untungItem >= 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-red-700'}
+                    >
+                      {untungItem >= 0 ? '+' : ''}
+                      {rupiah(untungItem)}
+                    </span>
+                  </div>
 
-                <div className="mb-3 flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-xs">
-                  <span className="text-stone-500">
-                    Stok: <b className="text-stone-900">{it.stok}</b> · Terjual:{' '}
-                    <b className="text-stone-900">{it.terjual}</b>
-                  </span>
-                  <span className={untungItem >= 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-red-700'}>
-                    {untungItem >= 0 ? '+' : ''}
-                    {rupiah(untungItem)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={it.stok}
-                    value={sellQty[it.id] ?? ''}
-                    onChange={(e) => setSellQty((s) => ({ ...s, [it.id]: e.target.value }))}
-                    placeholder="Qty"
-                    disabled={habis}
-                    className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-stone-50"
-                  />
-                  <button
-                    onClick={() => jual(it)}
-                    disabled={habis}
-                    className="flex-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
-                  >
-                    Catat Laku
-                  </button>
-                  <button
-                    onClick={() => startEdit(it)}
-                    className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-50"
-                    title="Edit"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={() => hapus(it.id)}
-                    className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                    title="Hapus"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-          {view.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-400">
-              Tidak ada barang yang cocok. Coba ubah filter atau tambahkan barang baru.
-            </div>
-          )}
-        </section>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={it.stok}
+                      value={sellQty[it.id] ?? ''}
+                      onChange={(e) => setSellQty((s) => ({ ...s, [it.id]: e.target.value }))}
+                      placeholder="Qty"
+                      disabled={habis || busy}
+                      className="w-20 rounded-lg border border-stone-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-stone-50"
+                    />
+                    <button
+                      onClick={() => jual(it)}
+                      disabled={habis || busy}
+                      className="flex-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+                    >
+                      Catat Laku
+                    </button>
+                    <button
+                      onClick={() => startEdit(it)}
+                      disabled={busy}
+                      className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+                      title="Edit"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => hapus(it.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      title="Hapus"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+            {view.length === 0 && !error && (
+              <div className="col-span-full rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-400">
+                {items.length === 0
+                  ? 'Belum ada barang. Klik "+ Barang Baru" untuk mulai.'
+                  : 'Tidak ada barang yang cocok dengan filter.'}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {showForm && (
@@ -373,15 +453,17 @@ export default function WarungPage() {
                   setShowForm(false);
                   setDraft(EMPTY);
                 }}
-                className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+                disabled={busy}
+                className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 onClick={simpan}
-                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                disabled={busy}
+                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
               >
-                Simpan
+                {busy ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>
