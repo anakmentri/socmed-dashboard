@@ -128,11 +128,13 @@ function AutoPostInner() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Limit: 20MB untuk foto, 50MB untuk video (sesuai Telegram Bot API)
+    // Limit client-side: 20MB foto, 200MB video (sesuai request user).
+    // ⚠ Telegram standard bot API hanya terima video sampai 50MB — di atas itu
+    // bakal direject oleh Telegram dengan error "Request entity too large".
     const maxSize = (file: File) =>
-      file.type.startsWith("video") ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+      file.type.startsWith("video") ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
     const maxLabel = (file: File) =>
-      file.type.startsWith("video") ? "50MB" : "20MB";
+      file.type.startsWith("video") ? "200MB" : "20MB";
 
     if (tab === "twitter") {
       const file = files[0];
@@ -162,6 +164,14 @@ function AutoPostInner() {
           setMediaList((prev) => [...prev, ...newItems]);
         }
         return;
+      }
+      // Warning: video > 50MB akan ditolak Telegram Bot API
+      if (file.type.startsWith("video") && file.size > 50 * 1024 * 1024) {
+        const mb = Math.round(file.size / 1024 / 1024);
+        toast(
+          `⚠ ${file.name} (${mb}MB) > 50MB. Telegram bot mungkin tolak. Compress dulu kalau gagal.`,
+          false
+        );
       }
       const reader = new FileReader();
       reader.onload = () => {
