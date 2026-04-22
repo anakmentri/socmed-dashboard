@@ -36,6 +36,22 @@ export default function AssetsPage() {
     data: empty,
   });
 
+  // Cek availability Storage bucket sekali saat mount (untuk banner warning)
+  const [bucketReady, setBucketReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { error } = await supabase.storage.from("assets").list("", { limit: 1 });
+        setBucketReady(!error);
+        if (error) {
+          console.warn("[storage] bucket check failed:", error.message);
+        }
+      } catch {
+        setBucketReady(false);
+      }
+    })();
+  }, []);
+
   // Bulk upload state — pattern row-based seperti Tambah Akun Sosmed Multi
   type BulkItem = {
     id: string;
@@ -471,7 +487,11 @@ export default function AssetsPage() {
     toast(`📁 ${file.name} (${formatFileSize(file.size)}) siap diupload`);
   };
 
-  /** Upload base64 image string ke Supabase Storage, return public URL */
+  /**
+   * Upload image base64 ke Supabase Storage.
+   * Kalau bucket belum dibuat (Bucket not found), FALLBACK ke base64 (legacy mode)
+   * — upload tetap jalan, cuma pakai cara lama yang berat.
+   */
   const uploadBase64ToStorage = async (
     base64: string,
     type: "foto" | "video"
@@ -489,7 +509,17 @@ export default function AssetsPage() {
       cacheControl: "31536000",
       upsert: false,
     });
-    if (error) throw new Error(`Storage upload: ${error.message}`);
+    if (error) {
+      // FALLBACK: kalau bucket belum dibuat → simpan sebagai base64 (legacy)
+      if (
+        error.message.toLowerCase().includes("bucket not found") ||
+        error.message.toLowerCase().includes("not_found")
+      ) {
+        console.warn("[storage] Bucket 'assets' belum ada, fallback ke base64 (legacy)");
+        return base64; // langsung return base64, akan disimpan di url field
+      }
+      throw new Error(`Storage upload: ${error.message}`);
+    }
     const { data: urlData } = supabase.storage.from("assets").getPublicUrl(fileName);
     return urlData.publicUrl;
   };
@@ -665,6 +695,35 @@ export default function AssetsPage() {
 
   return (
     <PageShell title="Asset Library" desc="Database asset postingan: gambar, link, dan caption siap pakai">
+      {/* Warning banner: bucket Storage belum dibuat */}
+      {bucketReady === false && isAdmin && (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-fg-200">
+          ⚠ <strong className="text-brand-amber">Bucket Storage belum dibuat</strong> —
+          upload tetap jalan pakai mode lama (base64), tapi lambat & berat. Buat bucket sekarang
+          untuk performa optimal:
+          <ol className="mt-2 ml-5 list-decimal text-[11px] text-fg-400">
+            <li>
+              Klik:{" "}
+              <a
+                href="https://supabase.com/dashboard/project/fireqxxqxxkxbcemcpmj/storage/buckets"
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-sky hover:underline"
+              >
+                Buka Supabase Storage Buckets
+              </a>
+            </li>
+            <li>
+              Klik <strong>New Bucket</strong> → Name: <code>assets</code> → ✅ centang{" "}
+              <strong>Public bucket</strong> → Create
+            </li>
+            <li>
+              Refresh halaman ini — banner akan hilang otomatis
+            </li>
+          </ol>
+        </div>
+      )}
+
       {!showAllDates && <DateNav value={date} onChange={setDate} />}
 
       {/* Toggle: Tampil per tanggal / Semua tanggal + search */}
