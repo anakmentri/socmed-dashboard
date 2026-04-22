@@ -459,6 +459,23 @@ export default function AssetsPage() {
 
       {/* Provider tabs — pisahkan postingan Tlegu & Rully */}
       <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {loading && rows.length === 0 ? (
+          <>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={`stat-skel-${i}`}
+                className="rounded-xl border border-bg-700 bg-bg-800 p-3"
+              >
+                <div className="mb-2 h-3 w-20 animate-pulse rounded bg-bg-700" />
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-7 animate-pulse rounded-lg bg-bg-700" />
+                  <div className="h-6 w-10 animate-pulse rounded bg-bg-700" />
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+        <>
         <button
           onClick={() => setProviderFilter("all")}
           className={`rounded-xl border p-3 text-left transition ${
@@ -527,6 +544,8 @@ export default function AssetsPage() {
           </div>
           <div className="mt-1 text-2xl font-extrabold text-fg-300">{lainnyaCount}</div>
         </button>
+        </>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -613,7 +632,34 @@ export default function AssetsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.length === 0 && (
+        {/* Skeleton loading — tampil saat initial fetch belum selesai */}
+        {loading && rows.length === 0 &&
+          Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={`skeleton-${i}`}
+              className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800"
+            >
+              <div className="h-40 w-full animate-pulse bg-bg-700/60" />
+              <div className="p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-4 w-14 animate-pulse rounded bg-bg-700" />
+                  <div className="h-3 w-24 animate-pulse rounded bg-bg-700" />
+                  <div className="h-3 w-12 animate-pulse rounded bg-bg-700" />
+                </div>
+                <div className="mb-2 h-4 w-3/4 animate-pulse rounded bg-bg-700" />
+                <div className="mb-3 h-16 w-full animate-pulse rounded bg-bg-700/60" />
+                <div className="flex gap-1.5">
+                  <div className="h-6 w-24 animate-pulse rounded bg-bg-700" />
+                  <div className="h-6 w-16 animate-pulse rounded bg-bg-700" />
+                  <div className="h-6 w-12 animate-pulse rounded bg-bg-700" />
+                  <div className="h-6 w-14 animate-pulse rounded bg-bg-700" />
+                </div>
+              </div>
+            </div>
+          ))}
+
+        {/* Empty state — setelah loading selesai tapi data kosong */}
+        {!loading && filtered.length === 0 && (
           <div className="rounded-xl border border-bg-700 bg-bg-800 p-8 text-center text-fg-500 md:col-span-2 xl:col-span-3">
             <div className="mb-2 text-4xl opacity-50">📦</div>
             <div className="text-sm font-semibold">
@@ -739,7 +785,39 @@ export default function AssetsPage() {
             </div>
           </div>
         ))}
+
+        {/* Skeleton tambahan saat loading chunk berikutnya */}
+        {loadingMore &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={`skeleton-more-${i}`}
+              className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800"
+            >
+              <div className="h-40 w-full animate-pulse bg-bg-700/60" />
+              <div className="p-4">
+                <div className="mb-2 h-4 w-3/4 animate-pulse rounded bg-bg-700" />
+                <div className="h-16 w-full animate-pulse rounded bg-bg-700/60" />
+              </div>
+            </div>
+          ))}
       </div>
+
+      {/* Progress indicator untuk background pagination */}
+      {rows.length > 0 && rows.length < totalCount && (
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-bg-700 bg-bg-800 p-3 text-xs text-fg-400">
+          <div className="h-3 w-3 animate-spin rounded-full border-2 border-brand-sky border-t-transparent" />
+          <span>
+            Memuat asset: <strong className="text-fg-100">{rows.length}</strong> dari{" "}
+            <strong className="text-fg-100">{totalCount}</strong>
+          </span>
+          <div className="ml-3 h-1.5 w-40 overflow-hidden rounded-full bg-bg-700">
+            <div
+              className="h-full rounded-full bg-brand-sky transition-all"
+              style={{ width: `${(rows.length / totalCount) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <Modal
         open={modal.open}
