@@ -75,16 +75,26 @@ export default function AssetsPage() {
     loading,
     refresh,
     isStale,
+    mutate,
   } = useCachedData<Row[]>({
     key: ASSETS_CACHE_KEY,
     fetcher: fetchAssets,
+    preserveOnEmpty: true,
   });
   const rows: Row[] = rowsCached || [];
 
+  // Force fresh dari server (untuk tombol Refresh manual)
   const load = async () => {
     invalidateCache(ASSETS_CACHE_KEY);
     await refresh();
   };
+
+  // Optimistic update — pakai setelah add/edit/delete supaya UI tidak flicker
+  const optimisticAdd = (newRow: Row) => mutate((prev) => [newRow, ...(prev || [])]);
+  const optimisticUpdate = (id: number, patch: Partial<Row>) =>
+    mutate((prev) => (prev || []).map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const optimisticRemove = (id: number) =>
+    mutate((prev) => (prev || []).filter((r) => r.id !== id));
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
   const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
@@ -155,27 +165,67 @@ export default function AssetsPage() {
       uploaded_by: d.provider || myName,
     };
     if (modal.idx < 0) {
-      const { error } = await supabase.from("assets").insert(payload);
+      const { data: inserted, error } = await supabase
+        .from("assets")
+        .insert(payload)
+        .select()
+        .single();
       if (error) return toast(error.message, true);
+      // Optimistic add — UI langsung ke-update tanpa nunggu refetch
+      if (inserted) {
+        const newRow: Row = {
+          id: inserted.id,
+          title: d.title,
+          type: d.type,
+          caption: d.caption,
+          link: d.link,
+          image: d.image,
+          date: d.date,
+          provider: d.provider || myName,
+          notes: d.notes,
+          status: d.status,
+        };
+        optimisticAdd(newRow);
+      }
       logAs(session, `Tambah Asset ${d.type}`, "Asset", `${d.title}`);
       toast("Asset ditambahkan");
     } else {
-      const { error } = await supabase.from("assets").update(payload).eq("id", rows[modal.idx].id);
+      const targetId = rows[modal.idx].id;
+      const { error } = await supabase.from("assets").update(payload).eq("id", targetId);
       if (error) return toast(error.message, true);
+      // Optimistic update
+      optimisticUpdate(targetId, {
+        title: d.title,
+        type: d.type,
+        caption: d.caption,
+        link: d.link,
+        image: d.image,
+        date: d.date,
+        provider: d.provider || myName,
+        notes: d.notes,
+      });
       logAs(session, `Edit Asset ${d.type}`, "Asset", `${d.title}`);
       toast("Asset diperbarui");
     }
     close();
-    load();
+    // Background refresh untuk sync data baru, tapi UI sudah update dulu
+    refresh();
   };
 
   const remove = async (r: Row) => {
     if (!canUpload) { toast("Hanya Tlegu & Rully yang bisa hapus asset", true); return; }
     if (!confirm(`Hapus asset "${r.title}"?`)) return;
-    await supabase.from("assets").delete().eq("id", r.id);
+    // Optimistic: hilangkan dulu di UI, baru DB
+    optimisticRemove(r.id);
+    const { error } = await supabase.from("assets").delete().eq("id", r.id);
+    if (error) {
+      // Rollback kalau gagal — revalidate dari server
+      toast(`Gagal hapus: ${error.message}`, true);
+      refresh();
+      return;
+    }
     logAs(session, "Hapus Asset", "Asset", r.title);
     toast("Asset dihapus");
-    load();
   };
 
   const copy = (text: string, label: string) => {
