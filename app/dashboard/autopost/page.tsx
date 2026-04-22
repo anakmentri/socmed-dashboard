@@ -57,6 +57,8 @@ function AutoPostInner() {
   const [tgConns, setTgConns] = useState<TelegramConn[]>([]);
   const [twPosts, setTwPosts] = useState<TwitterPost[]>([]);
   const [tgPosts, setTgPosts] = useState<SocialPost[]>([]);
+  const [sharedBotToken, setSharedBotToken] = useState<string>(""); // bot token bersama dari admin/anggota lain
+  const [sharedBotUsername, setSharedBotUsername] = useState<string>("");
 
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
@@ -102,6 +104,25 @@ function AutoPostInner() {
     setTgConns((tgC.data as TelegramConn[]) || []);
     setTwPosts((twP.data as TwitterPost[]) || []);
     setTgPosts((tgP.data as SocialPost[]) || []);
+
+    // Fetch any existing bot_token (shared across all users) — biar member tidak perlu input token
+    const { data: anyTg } = await supabase
+      .from("telegram_connections")
+      .select("bot_token")
+      .limit(1)
+      .order("created_at", { ascending: true })
+      .maybeSingle();
+    if (anyTg?.bot_token) {
+      setSharedBotToken(anyTg.bot_token);
+      // Fetch bot username dari Telegram API biar member tau bot mana yg di-invite
+      try {
+        const r = await fetch(
+          `https://api.telegram.org/bot${anyTg.bot_token}/getMe`
+        );
+        const j = await r.json();
+        if (j.ok && j.result?.username) setSharedBotUsername(j.result.username);
+      } catch {}
+    }
   };
 
   useEffect(() => {
@@ -159,11 +180,10 @@ function AutoPostInner() {
     if (!tgForm.owner) return toast("Pemegang wajib", true);
     if (!tgForm.chat_id.trim()) return toast("Chat ID / Channel wajib", true);
 
-    // Auto-reuse token dari koneksi yang sudah ada (kalau user tidak isi token baru)
+    // Auto-reuse token: prioritas (1) input user, (2) koneksi sendiri, (3) bot bersama
     let tokenToUse = tgForm.bot_token.trim();
-    if (!tokenToUse && tgConns.length > 0) {
-      tokenToUse = tgConns[0].bot_token; // pakai bot yang sudah ada
-    }
+    if (!tokenToUse && tgConns.length > 0) tokenToUse = tgConns[0].bot_token;
+    if (!tokenToUse && sharedBotToken) tokenToUse = sharedBotToken;
     if (!tokenToUse) {
       return toast("Bot token wajib untuk koneksi pertama", true);
     }
@@ -374,11 +394,23 @@ function AutoPostInner() {
         {/* Telegram setup form */}
         {tab === "telegram" && showTgSetup && (
           <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4">
-            {tgConns.length > 0 ? (
+            {tgConns.length > 0 || sharedBotToken ? (
               // Sudah ada bot yang tersimpan — cukup chat_id
               <div className="mb-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-brand-emerald">
-                ✓ Bot Telegram sudah ada (terhubung sebelumnya). Cukup{" "}
-                <strong>invite bot ke channel baru sebagai admin</strong>, lalu isi Chat ID di bawah.
+                ✓ Bot sudah tersedia
+                {sharedBotUsername && (
+                  <>
+                    : <strong>@{sharedBotUsername}</strong>
+                  </>
+                )}
+                . Cukup <strong>invite bot ke channel/grup baru sebagai member/admin</strong>, lalu
+                isi Chat ID.
+                {isMember && (
+                  <div className="mt-1 text-brand-sky">
+                    💡 Kamu tidak perlu buat bot sendiri — pakai bot yang sudah ada
+                    {sharedBotUsername && ` (@${sharedBotUsername})`}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="mb-3 text-xs text-fg-300">
@@ -422,7 +454,7 @@ function AutoPostInner() {
                 value={tgForm.chat_title}
                 onChange={(e) => setTgForm({ ...tgForm, chat_title: e.target.value })}
               />
-              {tgConns.length === 0 && (
+              {tgConns.length === 0 && !sharedBotToken && (
                 <input
                   className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
                   placeholder="Bot Token (123456:ABC-DEF...) — cuma setup pertama"
