@@ -206,16 +206,49 @@ export default function AssetsPage() {
     if (!canUpload) { toast("Hanya Tlegu & Rully yang bisa edit asset", true); return; }
     setModal({ open: true, idx: i, data: { ...r } });
   };
-  const close = () => setModal((m) => ({ ...m, open: false }));
+  const close = () => {
+    setModal((m) => ({ ...m, open: false }));
+    setUploadInfo(null);
+  };
+
+  // Format byte size to human readable (KB / MB)
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  // Estimate base64 size (base64 encoded ~1.33x original)
+  const estimateBase64Size = (b64: string): number => {
+    if (!b64 || !b64.includes("base64,")) return 0;
+    const data = b64.split("base64,")[1] || "";
+    // Length of base64 minus padding
+    const padding = (data.match(/=+$/)?.[0] || "").length;
+    return Math.floor((data.length * 3) / 4) - padding;
+  };
+
+  const [uploadInfo, setUploadInfo] = useState<{
+    name: string;
+    size: number;
+    type: string;
+  } | null>(null);
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return toast("Maks 5 MB", true);
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      return toast(
+        `File ${formatFileSize(file.size)} terlalu besar. Maks 5 MB`,
+        true
+      );
+    }
+    setUploadInfo({ name: file.name, size: file.size, type: file.type });
     const reader = new FileReader();
     reader.onload = () =>
       setModal((m) => ({ ...m, data: { ...m.data, image: String(reader.result || "") } }));
     reader.readAsDataURL(file);
+    toast(`📁 ${file.name} (${formatFileSize(file.size)}) siap diupload`);
   };
 
   /** Upload base64 image string ke Supabase Storage, return public URL */
@@ -889,12 +922,95 @@ export default function AssetsPage() {
           </div>
         ) : (
           <div className="mb-4">
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
-              Upload Gambar (maks 2 MB)
+            <label className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-fg-300">
+              <span>Upload Gambar</span>
+              <span className="text-[10px] font-normal normal-case text-fg-500">
+                Maks 5 MB · JPG/PNG/WEBP
+              </span>
             </label>
+
             {modal.data.image && (
-              <img src={modal.data.image} alt="preview" className="mb-2 max-h-40 rounded-lg" />
+              <div className="mb-2">
+                <img
+                  src={modal.data.image}
+                  alt="preview"
+                  className="max-h-40 rounded-lg border border-bg-700"
+                />
+                {/* File info */}
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-xs">
+                  <span className="text-brand-emerald">📁</span>
+                  {uploadInfo ? (
+                    <>
+                      <span className="truncate text-fg-200" title={uploadInfo.name}>
+                        {uploadInfo.name}
+                      </span>
+                      <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] font-bold text-fg-300">
+                        {formatFileSize(uploadInfo.size)}
+                      </span>
+                      <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] text-fg-500">
+                        {uploadInfo.type.split("/")[1]?.toUpperCase()}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-fg-400">
+                      Image lama (
+                      {modal.data.image.startsWith("data:")
+                        ? formatFileSize(estimateBase64Size(modal.data.image))
+                        : "URL Storage"}
+                      )
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadInfo(null);
+                      setModal((m) => ({ ...m, data: { ...m.data, image: "" } }));
+                    }}
+                    className="ml-auto text-[10px] text-brand-rose hover:underline"
+                  >
+                    ✕ Hapus
+                  </button>
+                </div>
+
+                {/* Indikator size status */}
+                {uploadInfo && (
+                  <div className="mt-2">
+                    <div className="mb-1 flex items-center justify-between text-[10px]">
+                      <span className="text-fg-500">Size relatif limit (5 MB)</span>
+                      <span
+                        className={`font-bold ${
+                          uploadInfo.size > 4 * 1024 * 1024
+                            ? "text-brand-rose"
+                            : uploadInfo.size > 2 * 1024 * 1024
+                            ? "text-brand-amber"
+                            : "text-brand-emerald"
+                        }`}
+                      >
+                        {Math.round((uploadInfo.size / (5 * 1024 * 1024)) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-bg-700">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          uploadInfo.size > 4 * 1024 * 1024
+                            ? "bg-brand-rose"
+                            : uploadInfo.size > 2 * 1024 * 1024
+                            ? "bg-brand-amber"
+                            : "bg-brand-emerald"
+                        }`}
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (uploadInfo.size / (5 * 1024 * 1024)) * 100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
+
             <input
               type="file"
               accept="image/*"
