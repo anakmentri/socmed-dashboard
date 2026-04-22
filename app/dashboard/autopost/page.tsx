@@ -69,6 +69,7 @@ function AutoPostInner() {
 
   // Telegram setup form
   const [showTgSetup, setShowTgSetup] = useState(false);
+  const [useCustomToken, setUseCustomToken] = useState(false); // override pakai bot lain
   const [tgForm, setTgForm] = useState({
     owner: "",
     bot_token: "",
@@ -228,6 +229,7 @@ function AutoPostInner() {
     logAs(session, "Connect Telegram", "Auto Post", tgForm.chat_title || tgForm.chat_id);
     toast("Channel Telegram ditambahkan!");
     setShowTgSetup(false);
+    setUseCustomToken(false);
     setTgForm({ owner: myName, bot_token: "", chat_id: "", chat_title: "" });
     load();
   };
@@ -394,7 +396,7 @@ function AutoPostInner() {
         {/* Telegram setup form */}
         {tab === "telegram" && showTgSetup && (
           <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4">
-            {tgConns.length > 0 || sharedBotToken ? (
+            {(tgConns.length > 0 || sharedBotToken) && !useCustomToken ? (
               // Sudah ada bot yang tersimpan — cukup chat_id
               <div className="mb-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-brand-emerald">
                 ✓ Bot sudah tersedia
@@ -410,6 +412,14 @@ function AutoPostInner() {
                     💡 Kamu tidak perlu buat bot sendiri — pakai bot yang sudah ada
                     {sharedBotUsername && ` (@${sharedBotUsername})`}
                   </div>
+                )}
+                {!isMember && (
+                  <button
+                    onClick={() => setUseCustomToken(true)}
+                    className="mt-2 block text-[11px] text-brand-sky hover:underline"
+                  >
+                    + Pakai bot lain (input token baru)
+                  </button>
                 )}
               </div>
             ) : (
@@ -454,14 +464,27 @@ function AutoPostInner() {
                 value={tgForm.chat_title}
                 onChange={(e) => setTgForm({ ...tgForm, chat_title: e.target.value })}
               />
-              {tgConns.length === 0 && !sharedBotToken && (
-                <input
-                  className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
-                  placeholder="Bot Token (123456:ABC-DEF...) — cuma setup pertama"
-                  value={tgForm.bot_token}
-                  onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
-                />
-              )}
+              {(tgConns.length === 0 && !sharedBotToken) || useCustomToken ? (
+                <div className="md:col-span-2">
+                  <input
+                    className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky"
+                    placeholder="Bot Token (123456:ABC-DEF...)"
+                    value={tgForm.bot_token}
+                    onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
+                  />
+                  {useCustomToken && (
+                    <button
+                      onClick={() => {
+                        setUseCustomToken(false);
+                        setTgForm({ ...tgForm, bot_token: "" });
+                      }}
+                      className="mt-1 text-[10px] text-fg-500 hover:text-fg-300"
+                    >
+                      ← Pakai bot {sharedBotUsername ? `@${sharedBotUsername}` : "yang sudah ada"} saja
+                    </button>
+                  )}
+                </div>
+              ) : null}
               <input
                 className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
                 placeholder="Chat ID (mis: -1001234567890) atau @channelusername"
