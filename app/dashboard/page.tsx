@@ -274,6 +274,174 @@ export default function OverviewPage() {
         ))}
       </div>
 
+      {/* Kinerja Anggota — per anggota, per hari, % target harian */}
+      <div className="mb-6 rounded-xl border border-bg-700 bg-bg-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bg-700 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold text-brand-emerald">📈 Kinerja Anggota Hari Ini</h4>
+            <span className="hidden text-[10px] text-fg-500 sm:inline">
+              Target: 3 pengerjaan + 2 report + 1 input = 100%
+            </span>
+          </div>
+          <span className="text-xs text-fg-500">{date}</span>
+        </div>
+        <div className="p-5">
+          {(() => {
+            // Target unit per hari: 3 pengerjaan + 2 report + 1 input = 6 unit = 100%
+            // Bobot: pengerjaan selesai = 1 unit/item, report = 0.5 unit/item (max 2 = 1 unit), input = 1 unit/item (max 1)
+            const TARGET_UNITS = 6;
+            const scored = team
+              .map((t) => {
+                const uw = dailyWork.filter((w) => w.name === t.name);
+                const ur = reports.filter((r) => r.name === t.name);
+                const ui = irData.filter((d) => d.anggota === t.name);
+                const ud = uw.filter((w) => w.status === "done").length;
+
+                // Unit calc
+                const workUnit = ud; // 1 per pengerjaan selesai (cap 3)
+                const reportUnit = Math.min(2, ur.length) * 1; // 1 per report sampai 2
+                const inputUnit = Math.min(1, ui.length) * 1; // 1 per input sampai 1
+                const units = Math.min(TARGET_UNITS, workUnit + reportUnit + inputUnit);
+                const pct = Math.round((units / TARGET_UNITS) * 100);
+
+                return {
+                  name: t.name,
+                  role: t.role,
+                  color: t.color,
+                  uw: uw.length,
+                  ud,
+                  ur: ur.length,
+                  ui: ui.length,
+                  pct,
+                };
+              })
+              .sort((a, b) => b.pct - a.pct);
+
+            const activeCount = scored.filter((s) => s.pct > 0).length;
+            const avgPct =
+              scored.length > 0
+                ? Math.round(scored.reduce((a, s) => a + s.pct, 0) / scored.length)
+                : 0;
+
+            return (
+              <>
+                <div className="mb-4 flex flex-wrap gap-4 text-xs">
+                  <div>
+                    <span className="text-fg-500">Aktif hari ini:</span>{" "}
+                    <span className="font-bold text-fg-100">
+                      {activeCount}/{scored.length}
+                    </span>{" "}
+                    anggota
+                  </div>
+                  <div>
+                    <span className="text-fg-500">Rata-rata kinerja:</span>{" "}
+                    <span
+                      className={`font-bold ${
+                        avgPct >= 80
+                          ? "text-brand-emerald"
+                          : avgPct >= 50
+                          ? "text-brand-amber"
+                          : "text-brand-rose"
+                      }`}
+                    >
+                      {avgPct}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {scored.map((m, idx) => {
+                    const barColor =
+                      m.pct >= 80
+                        ? "bg-brand-emerald"
+                        : m.pct >= 50
+                        ? "bg-brand-amber"
+                        : m.pct > 0
+                        ? "bg-brand-rose"
+                        : "bg-bg-700";
+                    const pctText =
+                      m.pct >= 80
+                        ? "text-brand-emerald"
+                        : m.pct >= 50
+                        ? "text-brand-amber"
+                        : m.pct > 0
+                        ? "text-brand-rose"
+                        : "text-fg-500";
+                    return (
+                      <div
+                        key={m.name}
+                        className="relative rounded-lg border border-bg-700 bg-bg-900 p-3 transition hover:border-bg-600"
+                      >
+                        {/* Rank badge */}
+                        {idx < 3 && m.pct > 0 && (
+                          <div className="absolute -top-2 -left-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-bg-800 text-[10px] font-bold text-white"
+                            style={{
+                              backgroundColor:
+                                idx === 0 ? "#fbbf24" : idx === 1 ? "#cbd5e1" : "#d97706",
+                            }}
+                          >
+                            {idx + 1}
+                          </div>
+                        )}
+
+                        <div className="mb-2 flex items-center gap-2">
+                          <span
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+                            style={{ backgroundColor: m.color }}
+                          >
+                            {initials(m.name)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate text-xs font-bold text-fg-100">
+                              {m.name}
+                            </div>
+                            <div className="truncate text-[10px] text-fg-500">{m.role}</div>
+                          </div>
+                          <div className={`text-xl font-extrabold ${pctText}`}>{m.pct}%</div>
+                        </div>
+
+                        <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-bg-700">
+                          <div
+                            className={`h-full rounded-full ${barColor} transition-all`}
+                            style={{ width: `${m.pct}%` }}
+                          />
+                        </div>
+
+                        <div className="flex justify-between gap-1 text-[10px] text-fg-500">
+                          <span>
+                            🔧 <span className="font-semibold text-fg-300">{m.ud}</span>
+                            <span className="text-fg-600">/{m.uw || 0}</span>
+                          </span>
+                          <span>
+                            📋 <span className="font-semibold text-fg-300">{m.ur}</span>
+                          </span>
+                          <span>
+                            📊 <span className="font-semibold text-fg-300">{m.ui}</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-bg-700 pt-3 text-[10px] text-fg-500">
+                  <span>
+                    <span className="font-bold text-fg-300">🔧 Pengerjaan:</span> selesai / total
+                    (max 3)
+                  </span>
+                  <span>
+                    <span className="font-bold text-fg-300">📋 Report:</span> jumlah (max 2)
+                  </span>
+                  <span>
+                    <span className="font-bold text-fg-300">📊 Input:</span> jumlah (max 1)
+                  </span>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      </div>
+
       {/* SB-Admin style: 2-panel chart row */}
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Aktivitas Overview — bar chart per anggota */}
