@@ -41,19 +41,20 @@ export default function AssetsPage() {
   const canUpload =
     session?.role === "admin" || ALLOWED_UPLOADERS.includes(session?.memberName || "");
 
-  // SINGLE fetcher — 1 request ke Supabase, hindari race + 500 error karena dobel request
-  const fetchAssets = async (): Promise<Row[]> => {
+  const PAGE_SIZE = 30;
+
+  // Fetch by chunk — hindari timeout di Supabase
+  const fetchAssetsPage = async (from: number, to: number): Promise<Row[]> => {
     const { data, error } = await supabase
       .from("assets")
       .select("id,name,type,url,uploaded_by")
       .order("created_at", { ascending: false })
-      .limit(500);
+      .range(from, to);
     if (error) {
-      console.error("[assets] fetch error:", error);
+      console.error("[assets] fetch error page", from, to, error);
       throw error;
     }
-    if (!data || !Array.isArray(data)) return [];
-    const mapped = data.map((a) => {
+    return (data || []).map((a) => {
       const u = unpackAssetUrl(a.url);
       return {
         id: a.id,
@@ -68,21 +69,38 @@ export default function AssetsPage() {
         status: u.status as "available" | "used",
       };
     });
-    console.log(`[assets] loaded ${mapped.length} rows`);
-    return mapped;
   };
 
-  // Local state — sumber utama untuk render. Fetch sekali saat mount.
+  // Get total count (cheap query — count only)
+  const fetchTotalCount = async (): Promise<number> => {
+    const { count, error } = await supabase
+      .from("assets")
+      .select("id", { count: "exact", head: true });
+    if (error) {
+      console.error("[assets] count error:", error);
+      return 0;
+    }
+    return count || 0;
+  };
+
   const [rows, setRows] = useState<Row[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [isStale, setIsStale] = useState(false);
 
+  // Initial load — page pertama saja
   const reload = async () => {
     setLoading(true);
     try {
-      const fresh = await fetchAssets();
-      setRows(fresh);
+      const [count, firstPage] = await Promise.all([
+        fetchTotalCount(),
+        fetchAssetsPage(0, PAGE_SIZE - 1),
+      ]);
+      setTotalCount(count);
+      setRows(firstPage);
       setIsStale(false);
+      console.log(`[assets] loaded ${firstPage.length}/${count} (page 1)`);
     } catch (e) {
       console.error("[assets] reload failed:", e);
     } finally {
@@ -90,25 +108,49 @@ export default function AssetsPage() {
     }
   };
 
+  // Load more — fetch page berikutnya
+  const loadMore = async () => {
+    if (rows.length >= totalCount) return;
+    setLoadingMore(true);
+    try {
+      const next = await fetchAssetsPage(rows.length, rows.length + PAGE_SIZE - 1);
+      setRows((prev) => [...prev, ...next]);
+      console.log(`[assets] loaded +${next.length} (total ${rows.length + next.length}/${totalCount})`);
+    } catch (e) {
+      console.error("[assets] loadMore failed:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Auto-load all kalau user buka "Semua Tanggal" mode atau pakai search
+  // (biar search & filter tetap akurat)
+  useEffect(() => {
+    if (rows.length > 0 && rows.length < totalCount && !loadingMore) {
+      // Auto chained loading — interval kecil supaya UI responsive
+      const t = setTimeout(() => loadMore(), 200);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length, totalCount, loadingMore]);
+
   useEffect(() => {
     reload();
-    // Re-fetch saat tab balik aktif (kalau sudah > 5 menit)
-    const onFocus = () => {
-      reload();
-    };
+    const onFocus = () => reload();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mark stale setiap 5 menit
   useEffect(() => {
     const t = setInterval(() => setIsStale(true), 5 * 60 * 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Compatibility shims — UI lain pake nama lama
   const refresh = reload;
+  // Backward-compat: fetchAssets dipakai oleh fungsi lain
+  const fetchAssets = () => fetchAssetsPage(0, PAGE_SIZE - 1);
+  void fetchAssets;
 
   // Force fresh dari server
   const load = async () => {
