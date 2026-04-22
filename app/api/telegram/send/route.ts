@@ -15,15 +15,25 @@ function getSupabase() {
  * Send message to Telegram via Bot API.
  * Body: { connection_id, text, media_base64?, media_type? ('photo' | 'video'), posted_by }
  */
+type MediaItem = { base64: string; type: "photo" | "video"; name?: string };
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { connection_id, text, media_base64, media_type, posted_by } = body;
+    const {
+      connection_id,
+      text,
+      media_base64,
+      media_type,
+      media_list,
+      posted_by,
+    } = body;
 
     if (!connection_id) {
       return NextResponse.json({ error: "connection_id required" }, { status: 400 });
     }
-    if (!text && !media_base64) {
+    const hasMedia = media_base64 || (Array.isArray(media_list) && media_list.length > 0);
+    if (!text && !hasMedia) {
       return NextResponse.json({ error: "text atau media wajib ada" }, { status: 400 });
     }
 
@@ -42,7 +52,75 @@ export async function POST(req: NextRequest) {
     let tgRes;
     let endpoint;
 
-    if (media_base64 && media_type) {
+    // Multi-media (album / media group)
+    if (Array.isArray(media_list) && media_list.length > 0) {
+      const items = media_list as MediaItem[];
+      if (items.length === 1) {
+        // Cuma 1 item — fallback ke sendPhoto/sendVideo single
+        const it = items[0];
+        const mimeMatch = it.base64.match(/^data:([^;]+);base64,(.+)$/);
+        if (!mimeMatch) {
+          return NextResponse.json({ error: "Format base64 tidak valid" }, { status: 400 });
+        }
+        const [, mime, b64] = mimeMatch;
+        const buf = Buffer.from(b64, "base64");
+        endpoint = it.type === "video" ? "sendVideo" : "sendPhoto";
+        const fieldName = it.type === "video" ? "video" : "photo";
+        const formData = new FormData();
+        formData.append("chat_id", conn.chat_id);
+        if (text) formData.append("caption", text);
+        if (text) formData.append("parse_mode", "HTML");
+        formData.append(
+          fieldName,
+          new Blob([new Uint8Array(buf)], { type: mime }),
+          it.name || (it.type === "video" ? "video.mp4" : "photo.jpg")
+        );
+        tgRes = await fetch(`${baseUrl}/${endpoint}`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        // Media group: multiple items in 1 album
+        endpoint = "sendMediaGroup";
+        const formData = new FormData();
+        formData.append("chat_id", conn.chat_id);
+
+        const mediaArray: Array<{
+          type: string;
+          media: string;
+          caption?: string;
+          parse_mode?: string;
+        }> = [];
+        items.forEach((it, idx) => {
+          const mimeMatch = it.base64.match(/^data:([^;]+);base64,(.+)$/);
+          if (!mimeMatch) return;
+          const [, mime, b64] = mimeMatch;
+          const buf = Buffer.from(b64, "base64");
+          const attachKey = `file${idx}`;
+          formData.append(
+            attachKey,
+            new Blob([new Uint8Array(buf)], { type: mime }),
+            it.name || `file${idx}.${it.type === "video" ? "mp4" : "jpg"}`
+          );
+          const item: { type: string; media: string; caption?: string; parse_mode?: string } = {
+            type: it.type, // 'photo' | 'video'
+            media: `attach://${attachKey}`,
+          };
+          // Caption hanya di item pertama (Telegram convention)
+          if (idx === 0 && text) {
+            item.caption = text;
+            item.parse_mode = "HTML";
+          }
+          mediaArray.push(item);
+        });
+
+        formData.append("media", JSON.stringify(mediaArray));
+        tgRes = await fetch(`${baseUrl}/${endpoint}`, {
+          method: "POST",
+          body: formData,
+        });
+      }
+    } else if (media_base64 && media_type) {
       // Upload media (photo/video) sebagai multipart
       const mimeMatch = media_base64.match(/^data:([^;]+);base64,(.+)$/);
       if (!mimeMatch) {
@@ -85,13 +163,22 @@ export async function POST(req: NextRequest) {
 
     const tgJson = await tgRes.json();
 
+    // Determine media_type label for log
+    const mediaCount = Array.isArray(media_list) ? media_list.length : media_base64 ? 1 : 0;
+    const mediaTypeLog =
+      mediaCount > 1
+        ? `album-${mediaCount}`
+        : Array.isArray(media_list) && media_list.length === 1
+        ? media_list[0].type
+        : media_type || null;
+
     if (!tgJson.ok) {
       await supabase.from("social_posts").insert({
         platform: "Telegram",
         posted_by: posted_by || conn.owner_name,
         target_owner: conn.owner_name,
         content: text || "",
-        media_type: media_type || null,
+        media_type: mediaTypeLog,
         status: "error",
         error: (tgJson.description || "Unknown error").slice(0, 500),
       });
@@ -101,13 +188,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const msgId = tgJson.result?.message_id?.toString();
+    // sendMediaGroup return array of messages, ambil id pertama
+    const msgId = Array.isArray(tgJson.result)
+      ? tgJson.result[0]?.message_id?.toString()
+      : tgJson.result?.message_id?.toString();
+
     await supabase.from("social_posts").insert({
       platform: "Telegram",
       posted_by: posted_by || conn.owner_name,
       target_owner: conn.owner_name,
       content: text || "",
-      media_type: media_type || null,
+      media_type: mediaTypeLog,
       external_id: msgId,
       status: "posted",
     });
@@ -116,6 +207,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       message_id: msgId,
       chat_title: conn.chat_title,
+      media_count: mediaCount,
     });
   } catch (e) {
     return NextResponse.json(

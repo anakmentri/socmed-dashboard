@@ -62,8 +62,9 @@ function AutoPostInner() {
   const [owner, setOwner] = useState("admin");
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
-  const [mediaBase64, setMediaBase64] = useState<string>("");
+  const [mediaBase64, setMediaBase64] = useState<string>(""); // legacy: 1 file (Twitter)
   const [mediaType, setMediaType] = useState<"photo" | "video" | null>(null);
+  const [mediaList, setMediaList] = useState<Array<{ base64: string; type: "photo" | "video"; name: string }>>([]); // multi-file (Telegram)
 
   // Telegram setup form
   const [showTgSetup, setShowTgSetup] = useState(false);
@@ -122,25 +123,70 @@ function AutoPostInner() {
     }
   }, [myName]);
 
-  // Media upload
+  // Media upload — Twitter pakai single, Telegram pakai multi (max 10)
   const onMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      toast("Maks 20MB", true);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (tab === "twitter") {
+      // Twitter: ambil 1 file pertama
+      const file = files[0];
+      if (file.size > 20 * 1024 * 1024) return toast("Maks 20MB", true);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setMediaBase64(String(reader.result || ""));
+        setMediaType(file.type.startsWith("video") ? "video" : "photo");
+      };
+      reader.readAsDataURL(file);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setMediaBase64(String(reader.result || ""));
-      setMediaType(file.type.startsWith("video") ? "video" : "photo");
-    };
-    reader.readAsDataURL(file);
+
+    // Telegram: multi-upload (max 10 total)
+    const remaining = 10 - mediaList.length;
+    if (remaining <= 0) return toast("Maksimal 10 media per post Telegram", true);
+
+    const toAdd = files.slice(0, remaining);
+    let processed = 0;
+    const newItems: typeof mediaList = [];
+
+    toAdd.forEach((file) => {
+      if (file.size > 20 * 1024 * 1024) {
+        toast(`${file.name}: lebih dari 20MB, di-skip`, true);
+        processed++;
+        if (processed === toAdd.length && newItems.length > 0) {
+          setMediaList((prev) => [...prev, ...newItems]);
+        }
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        newItems.push({
+          base64: String(reader.result || ""),
+          type: file.type.startsWith("video") ? "video" : "photo",
+          name: file.name,
+        });
+        processed++;
+        if (processed === toAdd.length) {
+          setMediaList((prev) => [...prev, ...newItems]);
+          if (files.length > remaining) {
+            toast(`${remaining} file diupload, ${files.length - remaining} di-skip (max 10)`, false);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    // Clear input agar bisa pilih file yg sama lagi
+    e.target.value = "";
   };
 
   const clearMedia = () => {
     setMediaBase64("");
     setMediaType(null);
+    setMediaList([]);
+  };
+
+  const removeMediaAt = (idx: number) => {
+    setMediaList((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // Twitter actions
@@ -238,7 +284,8 @@ function AutoPostInner() {
 
   // Post
   const postNow = async () => {
-    if (!text.trim() && !mediaBase64) return toast("Text atau media wajib", true);
+    const hasMedia = mediaBase64 || mediaList.length > 0;
+    if (!text.trim() && !hasMedia) return toast("Text atau media wajib", true);
 
     setPosting(true);
     try {
@@ -284,8 +331,11 @@ function AutoPostInner() {
           body: JSON.stringify({
             connection_id: chosen.id,
             text,
-            media_base64: mediaBase64 || undefined,
-            media_type: mediaType,
+            // Multi-media (Telegram media group)
+            media_list: mediaList.length > 0 ? mediaList : undefined,
+            // Backward-compat: single media
+            media_base64: mediaList.length === 0 && mediaBase64 ? mediaBase64 : undefined,
+            media_type: mediaList.length === 0 ? mediaType : undefined,
             posted_by: myName,
           }),
         });
@@ -294,7 +344,11 @@ function AutoPostInner() {
           toast(`Gagal: ${j.error || "error"}`, true);
         } else {
           logAs(session, "Post Telegram", "Auto Post", text.slice(0, 80));
-          toast(`Terkirim ke ${j.chat_title || "Telegram"}!`);
+          toast(
+            `Terkirim ke ${j.chat_title || "Telegram"}!${
+              j.media_count > 1 ? ` (${j.media_count} media)` : ""
+            }`
+          );
           setText("");
           clearMedia();
           load();
@@ -593,15 +647,30 @@ function AutoPostInner() {
         {/* Media upload */}
         <div className="mt-3 flex items-center gap-2">
           <label className="cursor-pointer rounded-lg border border-bg-700 bg-bg-900 px-3 py-1.5 text-xs text-fg-400 hover:border-brand-sky hover:text-fg-100">
-            📎 Attach Media
+            📎 Attach Media{tab === "telegram" ? " (multi)" : ""}
             <input
               type="file"
               accept="image/*,video/*"
               className="hidden"
+              multiple={tab === "telegram"}
               onChange={onMediaChange}
             />
           </label>
-          {mediaBase64 && (
+          {tab === "telegram" && mediaList.length > 0 && (
+            <>
+              <span className="text-[11px] text-brand-emerald">
+                ✓ {mediaList.length} media siap dikirim
+                {mediaList.length >= 10 && " (max)"}
+              </span>
+              <button
+                onClick={clearMedia}
+                className="text-[11px] text-brand-rose hover:underline"
+              >
+                Hapus semua
+              </button>
+            </>
+          )}
+          {tab === "twitter" && mediaBase64 && (
             <>
               <span className="text-[11px] text-brand-emerald">
                 ✓ {mediaType === "video" ? "Video" : "Gambar"} siap dikirim
@@ -616,7 +685,49 @@ function AutoPostInner() {
           )}
         </div>
 
-        {mediaBase64 && mediaType === "photo" && (
+        {/* Multi-media preview grid (Telegram) */}
+        {tab === "telegram" && mediaList.length > 0 && (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {mediaList.map((m, idx) => (
+              <div
+                key={idx}
+                className="group relative overflow-hidden rounded-lg border border-bg-700 bg-bg-900"
+              >
+                {m.type === "photo" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={m.base64}
+                    alt={m.name}
+                    className="h-24 w-full object-cover"
+                  />
+                ) : (
+                  <video
+                    src={m.base64}
+                    className="h-24 w-full object-cover"
+                  />
+                )}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                  <div className="truncate text-[9px] text-white">
+                    {m.type === "video" ? "🎬" : "🖼"} {m.name}
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeMediaAt(idx)}
+                  className="absolute right-1 top-1 rounded-full bg-red-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100"
+                  title="Hapus media"
+                >
+                  ✕
+                </button>
+                <div className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-bold text-white">
+                  {idx + 1}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Single media preview (Twitter) */}
+        {tab === "twitter" && mediaBase64 && mediaType === "photo" && (
           <div className="mt-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -626,7 +737,7 @@ function AutoPostInner() {
             />
           </div>
         )}
-        {mediaBase64 && mediaType === "video" && (
+        {tab === "twitter" && mediaBase64 && mediaType === "video" && (
           <div className="mt-2">
             <video
               src={mediaBase64}
@@ -644,7 +755,7 @@ function AutoPostInner() {
             onClick={postNow}
             disabled={
               posting ||
-              (!text.trim() && !mediaBase64) ||
+              (!text.trim() && !mediaBase64 && mediaList.length === 0) ||
               (tab === "twitter" && text.length > 280) ||
               availConns.length === 0
             }
