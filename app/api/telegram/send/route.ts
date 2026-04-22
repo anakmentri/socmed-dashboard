@@ -97,16 +97,26 @@ export async function POST(req: NextRequest) {
           const [, mime, b64] = mimeMatch;
           const buf = Buffer.from(b64, "base64");
           const attachKey = `file${idx}`;
+          const ext = mime.split("/")[1]?.split(";")[0] || (it.type === "video" ? "mp4" : "jpg");
+          const fileName = it.name || `file${idx}.${ext}`;
           formData.append(
             attachKey,
             new Blob([new Uint8Array(buf)], { type: mime }),
-            it.name || `file${idx}.${it.type === "video" ? "mp4" : "jpg"}`
+            fileName
           );
-          const item: { type: string; media: string; caption?: string; parse_mode?: string } = {
-            type: it.type, // 'photo' | 'video'
+          const item: {
+            type: string;
+            media: string;
+            caption?: string;
+            parse_mode?: string;
+            supports_streaming?: boolean;
+          } = {
+            type: it.type,
             media: `attach://${attachKey}`,
           };
-          // Caption hanya di item pertama (Telegram convention)
+          if (it.type === "video") {
+            item.supports_streaming = true;
+          }
           if (idx === 0 && text) {
             item.caption = text;
             item.parse_mode = "HTML";
@@ -121,7 +131,6 @@ export async function POST(req: NextRequest) {
         });
       }
     } else if (media_base64 && media_type) {
-      // Upload media (photo/video) sebagai multipart
       const mimeMatch = media_base64.match(/^data:([^;]+);base64,(.+)$/);
       if (!mimeMatch) {
         return NextResponse.json({ error: "Format base64 tidak valid" }, { status: 400 });
@@ -130,12 +139,20 @@ export async function POST(req: NextRequest) {
       const buf = Buffer.from(b64, "base64");
 
       endpoint = media_type === "video" ? "sendVideo" : "sendPhoto";
-      const fileName = media_type === "video" ? "video.mp4" : "photo.jpg";
+      // Ekstensi dari mime type
+      const ext = mime.split("/")[1]?.split(";")[0] || (media_type === "video" ? "mp4" : "jpg");
+      const fileName = `${media_type}.${ext}`;
       const fieldName = media_type === "video" ? "video" : "photo";
 
       const formData = new FormData();
       formData.append("chat_id", conn.chat_id);
-      if (text) formData.append("caption", text);
+      if (text) {
+        formData.append("caption", text);
+        formData.append("parse_mode", "HTML");
+      }
+      if (media_type === "video") {
+        formData.append("supports_streaming", "true");
+      }
       formData.append(
         fieldName,
         new Blob([new Uint8Array(buf)], { type: mime }),

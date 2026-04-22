@@ -128,10 +128,15 @@ function AutoPostInner() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
+    // Limit: 20MB untuk foto, 50MB untuk video (sesuai Telegram Bot API)
+    const maxSize = (file: File) =>
+      file.type.startsWith("video") ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+    const maxLabel = (file: File) =>
+      file.type.startsWith("video") ? "50MB" : "20MB";
+
     if (tab === "twitter") {
-      // Twitter: ambil 1 file pertama
       const file = files[0];
-      if (file.size > 20 * 1024 * 1024) return toast("Maks 20MB", true);
+      if (file.size > maxSize(file)) return toast(`Maks ${maxLabel(file)}`, true);
       const reader = new FileReader();
       reader.onload = () => {
         setMediaBase64(String(reader.result || ""));
@@ -150,8 +155,8 @@ function AutoPostInner() {
     const newItems: typeof mediaList = [];
 
     toAdd.forEach((file) => {
-      if (file.size > 20 * 1024 * 1024) {
-        toast(`${file.name}: lebih dari 20MB, di-skip`, true);
+      if (file.size > maxSize(file)) {
+        toast(`${file.name}: lebih dari ${maxLabel(file)}, di-skip`, true);
         processed++;
         if (processed === toAdd.length && newItems.length > 0) {
           setMediaList((prev) => [...prev, ...newItems]);
