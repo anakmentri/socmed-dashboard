@@ -36,7 +36,8 @@ export default function AssetsPage() {
     data: empty,
   });
   const isMember = session?.role === "member";
-  const myName = session?.memberName || (session?.role === "admin" ? "admin" : "");
+  const isAdmin = session?.role === "admin";
+  const myName = session?.memberName || (isAdmin ? "admin" : "");
   const ALLOWED_UPLOADERS = ["Tlegu", "Rully"];
   const canUpload =
     session?.role === "admin" || ALLOWED_UPLOADERS.includes(session?.memberName || "");
@@ -210,11 +211,107 @@ export default function AssetsPage() {
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return toast("Maks 2 MB", true);
+    if (file.size > 5 * 1024 * 1024) return toast("Maks 5 MB", true);
     const reader = new FileReader();
     reader.onload = () =>
       setModal((m) => ({ ...m, data: { ...m.data, image: String(reader.result || "") } }));
     reader.readAsDataURL(file);
+  };
+
+  /** Upload base64 image string ke Supabase Storage, return public URL */
+  const uploadBase64ToStorage = async (
+    base64: string,
+    type: "foto" | "video"
+  ): Promise<string> => {
+    const m = base64.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) throw new Error("Invalid base64 format");
+    const [, mime, b64] = m;
+    const ext = mime.split("/")[1]?.split(";")[0] || (type === "video" ? "mp4" : "jpg");
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const blob = new Blob([arr], { type: mime });
+    const fileName = `${type}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+    const { error } = await supabase.storage.from("assets").upload(fileName, blob, {
+      cacheControl: "31536000",
+      upsert: false,
+    });
+    if (error) throw new Error(`Storage upload: ${error.message}`);
+    const { data: urlData } = supabase.storage.from("assets").getPublicUrl(fileName);
+    return urlData.publicUrl;
+  };
+
+  // Migration tool — pindahkan base64 lama ke Storage
+  const [migrating, setMigrating] = useState(false);
+  const [migrateProgress, setMigrateProgress] = useState({ done: 0, total: 0, errors: 0 });
+
+  const migrateBase64ToStorage = async () => {
+    if (!isAdmin) return toast("Cuma admin yang bisa migrate", true);
+    if (!confirm("Migrate semua image base64 ke Supabase Storage? Proses bisa lama (5-15 menit).")) return;
+
+    setMigrating(true);
+    try {
+      // Fetch SEMUA assets (untuk migrate) — pakai range chunked
+      const { count } = await supabase.from("assets").select("id", { count: "exact", head: true });
+      const total = count || 0;
+      setMigrateProgress({ done: 0, total, errors: 0 });
+
+      let offset = 0;
+      let processed = 0;
+      let errors = 0;
+      const PAGE = 10;
+
+      while (offset < total) {
+        const { data, error } = await supabase
+          .from("assets")
+          .select("id,name,type,url")
+          .order("id", { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) {
+          console.error("Migration fetch error:", error);
+          errors += PAGE;
+          offset += PAGE;
+          continue;
+        }
+        for (const a of data || []) {
+          try {
+            const u = unpackAssetUrl(a.url);
+            // Skip kalau image bukan base64 (sudah URL atau kosong)
+            if (!u.image || !u.image.startsWith("data:")) {
+              processed++;
+              continue;
+            }
+            const publicUrl = await uploadBase64ToStorage(
+              u.image,
+              (a.type as "foto" | "video") || "foto"
+            );
+            // Update url field — replace base64 image dengan public URL
+            const newPacked = packAssetUrl({
+              caption: u.caption,
+              link: u.link,
+              image: publicUrl,
+              date: u.date,
+              notes: u.notes,
+              status: u.status,
+            });
+            await supabase.from("assets").update({ url: newPacked }).eq("id", a.id);
+            processed++;
+          } catch (e) {
+            console.error("Migrate row error", a.id, e);
+            errors++;
+            processed++;
+          }
+          setMigrateProgress({ done: processed, total, errors });
+        }
+        offset += PAGE;
+      }
+      toast(`Migrasi selesai: ${processed - errors}/${total} sukses, ${errors} gagal`);
+      reload();
+    } catch (e) {
+      toast(`Migration error: ${e instanceof Error ? e.message : "unknown"}`, true);
+    } finally {
+      setMigrating(false);
+    }
   };
 
   const save = async () => {
@@ -227,10 +324,21 @@ export default function AssetsPage() {
     if (!confirm(`Pastikan tanggal sudah benar:\n\n→ ${fmtIdDate(d.date)}\n\nTitle: ${d.title}\n\nLanjut simpan?`))
       return;
 
+    // Upload image base64 → Supabase Storage (kalau masih base64)
+    let imageUrl = d.image;
+    if (d.image && d.image.startsWith("data:")) {
+      try {
+        toast("Uploading image ke storage...");
+        imageUrl = await uploadBase64ToStorage(d.image, d.type);
+      } catch (e) {
+        return toast(`Gagal upload image: ${e instanceof Error ? e.message : "error"}`, true);
+      }
+    }
+
     const payload = {
       name: d.title,
       type: d.type,
-      url: packAssetUrl(d),
+      url: packAssetUrl({ ...d, image: imageUrl }),
       uploaded_by: d.provider || myName,
     };
     if (modal.idx < 0) {
@@ -248,7 +356,7 @@ export default function AssetsPage() {
           type: d.type,
           caption: d.caption,
           link: d.link,
-          image: d.image,
+          image: imageUrl,
           date: d.date,
           provider: d.provider || myName,
           notes: d.notes,
@@ -472,6 +580,20 @@ export default function AssetsPage() {
               <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
             )}
           </button>
+          {isAdmin && (
+            <button
+              onClick={migrateBase64ToStorage}
+              disabled={migrating}
+              className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs font-semibold text-brand-orange hover:bg-orange-500/20 disabled:opacity-50"
+              title="Pindahkan semua image base64 lama ke Supabase Storage (lebih cepat & ringan)"
+            >
+              {migrating
+                ? `📦 Migrating ${migrateProgress.done}/${migrateProgress.total}${
+                    migrateProgress.errors > 0 ? ` (${migrateProgress.errors} err)` : ""
+                  }`
+                : "📦 Migrate ke Storage"}
+            </button>
+          )}
           {canUpload ? (
             <button
               onClick={openAdd}
