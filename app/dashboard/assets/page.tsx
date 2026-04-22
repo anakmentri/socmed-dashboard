@@ -36,17 +36,30 @@ export default function AssetsPage() {
     data: empty,
   });
 
-  // Bulk upload state
+  // Bulk upload state — pattern row-based seperti Tambah Akun Sosmed Multi
   type BulkItem = {
     id: string;
-    file: File;
-    base64: string;
+    type: "foto" | "video";
     title: string;
     caption: string;
-    type: "foto" | "video";
+    base64: string; // foto saja (data URL setelah pilih file)
+    fileName: string;
+    fileSize: number;
+    link: string; // video saja (URL Drive/YouTube)
     status: "pending" | "uploading" | "done" | "error";
     error?: string;
   };
+  const newEmptyBulkItem = (): BulkItem => ({
+    id: Math.random().toString(36).slice(2, 10),
+    type: "foto",
+    title: "",
+    caption: "",
+    base64: "",
+    fileName: "",
+    fileSize: 0,
+    link: "",
+    status: "pending",
+  });
   const [bulk, setBulk] = useState<{
     open: boolean;
     items: BulkItem[];
@@ -57,7 +70,7 @@ export default function AssetsPage() {
     progress: { done: number; total: number };
   }>({
     open: false,
-    items: [],
+    items: [newEmptyBulkItem()],
     sharedCaption: "",
     date: today(),
     provider: "",
@@ -240,13 +253,13 @@ export default function AssetsPage() {
     setUploadInfo(null);
   };
 
-  // ===== BULK UPLOAD =====
+  // ===== BULK UPLOAD (row-based) =====
   const openBulk = () => {
     if (!canUpload) return toast("Hanya Tlegu & Rully yang bisa upload", true);
     setBulk((b) => ({
       ...b,
       open: true,
-      items: [],
+      items: [newEmptyBulkItem()],
       sharedCaption: "",
       date,
       provider: myName,
@@ -256,49 +269,17 @@ export default function AssetsPage() {
   };
   const closeBulk = () => setBulk((b) => ({ ...b, open: false }));
 
-  const handleBulkFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    const MAX = 5 * 1024 * 1024;
-    const newItems: BulkItem[] = [];
-    let processed = 0;
-
-    files.forEach((file) => {
-      if (file.size > MAX) {
-        toast(`${file.name} (${formatFileSize(file.size)}) > 5MB, di-skip`, true);
-        processed++;
-        if (processed === files.length && newItems.length > 0) {
-          setBulk((b) => ({ ...b, items: [...b.items, ...newItems] }));
-        }
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const titleNoExt = file.name.replace(/\.[^/.]+$/, "");
-        newItems.push({
-          id: Math.random().toString(36).slice(2, 10),
-          file,
-          base64: String(reader.result || ""),
-          title: titleNoExt,
-          caption: "",
-          type: file.type.startsWith("video") ? "video" : "foto",
-          status: "pending",
-        });
-        processed++;
-        if (processed === files.length) {
-          setBulk((b) => ({ ...b, items: [...b.items, ...newItems] }));
-          if (newItems.length > 0) {
-            toast(`${newItems.length} file siap diupload`);
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = "";
-  };
+  const addBulkRow = () =>
+    setBulk((b) => ({ ...b, items: [...b.items, newEmptyBulkItem()] }));
 
   const removeBulkItem = (id: string) =>
-    setBulk((b) => ({ ...b, items: b.items.filter((it) => it.id !== id) }));
+    setBulk((b) => ({
+      ...b,
+      items:
+        b.items.length === 1
+          ? [newEmptyBulkItem()]
+          : b.items.filter((it) => it.id !== id),
+    }));
 
   const updateBulkItem = (id: string, patch: Partial<BulkItem>) =>
     setBulk((b) => ({
@@ -306,11 +287,53 @@ export default function AssetsPage() {
       items: b.items.map((it) => (it.id === id ? { ...it, ...patch } : it)),
     }));
 
+  // Pilih file untuk 1 row tertentu
+  const onBulkRowFile = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const MAX = 5 * 1024 * 1024;
+    if (file.size > MAX) {
+      return toast(`${file.name} (${formatFileSize(file.size)}) > 5MB`, true);
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const titleNoExt = file.name.replace(/\.[^/.]+$/, "");
+      // Auto-fill title dari nama file kalau title masih kosong
+      setBulk((b) => ({
+        ...b,
+        items: b.items.map((it) =>
+          it.id === id
+            ? {
+                ...it,
+                base64: String(reader.result || ""),
+                fileName: file.name,
+                fileSize: file.size,
+                title: it.title.trim() || titleNoExt,
+              }
+            : it
+        ),
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const runBulkUpload = async () => {
     if (!canUpload) return toast("Tidak diizinkan", true);
     if (!bulk.provider) return toast("Pemegang wajib", true);
-    const valid = bulk.items.filter((it) => it.title.trim() && it.base64);
-    if (valid.length === 0) return toast("Tidak ada file valid", true);
+    // Valid kalau punya title + (foto dengan base64) ATAU (video dengan link)
+    const valid = bulk.items.filter(
+      (it) =>
+        it.title.trim() &&
+        ((it.type === "foto" && it.base64) ||
+          (it.type === "video" && it.link.trim()))
+    );
+    if (valid.length === 0) {
+      return toast(
+        "Tidak ada baris valid. Pastikan title + (image utk foto / link utk video)",
+        true
+      );
+    }
 
     setBulk((b) => ({
       ...b,
@@ -326,17 +349,21 @@ export default function AssetsPage() {
       try {
         updateBulkItem(item.id, { status: "uploading" });
 
-        // Upload ke Storage
-        const publicUrl = await uploadBase64ToStorage(item.base64, item.type);
+        let publicUrl = "";
+        if (item.type === "foto") {
+          publicUrl = await uploadBase64ToStorage(item.base64, "foto");
+        }
+        // Untuk video, pakai link (URL Drive/YouTube), tidak upload file
 
-        const finalCaption = item.caption.trim() || bulk.sharedCaption.trim() || item.title;
+        const finalCaption =
+          item.caption.trim() || bulk.sharedCaption.trim() || item.title;
 
         const payload = {
           name: item.title.trim(),
           type: item.type,
           url: packAssetUrl({
             caption: finalCaption,
-            link: "",
+            link: item.link.trim(),
             image: publicUrl,
             date: bulk.date,
             notes: "",
@@ -358,7 +385,7 @@ export default function AssetsPage() {
             title: item.title.trim(),
             type: item.type,
             caption: finalCaption,
-            link: "",
+            link: item.link.trim(),
             image: publicUrl,
             date: bulk.date,
             provider: bulk.provider,
@@ -843,9 +870,9 @@ export default function AssetsPage() {
             <button
               onClick={openBulk}
               className="rounded-lg bg-gradient-to-r from-emerald-500 to-sky-500 px-4 py-2 text-sm font-bold text-white hover:opacity-90"
-              title="Upload banyak file sekaligus"
+              title="Tambah banyak asset sekaligus"
             >
-              ⚡ Upload Massal
+              + Tambah Asset (Multi)
             </button>
           )}
           {canUpload ? (
@@ -1054,51 +1081,49 @@ export default function AssetsPage() {
         </div>
       )}
 
-      {/* === BULK UPLOAD MODAL === */}
+      {/* === BULK UPLOAD MODAL (row-based seperti Akun Sosmed Multi) === */}
       <Modal
         open={bulk.open}
         onClose={closeBulk}
-        title="⚡ Upload Massal Asset"
+        title="Tambah Asset (Multi)"
         width={780}
       >
-        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-fg-200">
-          💡 Pilih banyak file sekaligus, isi info per file (atau pakai caption bersama),
-          klik <strong>Upload Semua</strong>. Otomatis ke Supabase Storage.
+
+        {/* Shared settings di atas */}
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            Pemegang (Uploader)
+          </label>
+          <input
+            type="text"
+            className={inputCls}
+            value={bulk.provider}
+            disabled={isMember}
+            placeholder="Nama anggota"
+            onChange={(e) => setBulk((b) => ({ ...b, provider: e.target.value }))}
+          />
         </div>
 
-        {/* Shared settings */}
-        <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-500">
-              Tanggal
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+              Tanggal Asset
             </label>
             <input
               type="date"
-              className={inputCls + " text-xs"}
+              className={inputCls}
               value={bulk.date}
               onChange={(e) => setBulk((b) => ({ ...b, date: e.target.value }))}
             />
           </div>
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-500">
-              Pemegang
-            </label>
-            <input
-              type="text"
-              className={inputCls + " text-xs"}
-              value={bulk.provider}
-              disabled={isMember}
-              onChange={(e) => setBulk((b) => ({ ...b, provider: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
               Caption Bersama (opsional)
             </label>
             <input
               type="text"
-              className={inputCls + " text-xs"}
-              placeholder="Akan dipakai jika caption per-file kosong"
+              className={inputCls}
+              placeholder="Pakai jika caption per-baris kosong"
               value={bulk.sharedCaption}
               onChange={(e) =>
                 setBulk((b) => ({ ...b, sharedCaption: e.target.value }))
@@ -1107,136 +1132,178 @@ export default function AssetsPage() {
           </div>
         </div>
 
-        {/* File picker */}
-        <div className="mb-4">
-          <label className="block cursor-pointer rounded-lg border-2 border-dashed border-bg-700 bg-bg-900 p-6 text-center transition hover:border-brand-sky">
-            <div className="mb-2 text-3xl">📁</div>
-            <div className="text-sm font-semibold text-fg-200">
-              Klik untuk pilih banyak file
-            </div>
-            <div className="mt-1 text-[10px] text-fg-500">
-              Image (JPG/PNG/WEBP/GIF) · Maks 5MB per file
-            </div>
-            <input
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              className="hidden"
-              onChange={handleBulkFiles}
-            />
-          </label>
+        {/* Header daftar + tombol Tambah Baris */}
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-fg-300">
+            Daftar Asset ({bulk.items.length})
+          </span>
+          <button
+            onClick={addBulkRow}
+            disabled={bulk.processing}
+            className="rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-brand-emerald hover:bg-emerald-500/30 disabled:opacity-50"
+          >
+            + Tambah Baris
+          </button>
         </div>
 
-        {/* List items */}
-        {bulk.items.length > 0 && (
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="font-semibold text-fg-300">
-                📦 {bulk.items.length} file siap upload
-              </span>
-              <button
-                onClick={() => setBulk((b) => ({ ...b, items: [] }))}
-                className="text-[10px] text-brand-rose hover:underline"
-              >
-                Hapus semua
-              </button>
-            </div>
-            <div className="max-h-[40vh] space-y-2 overflow-y-auto pr-1 scrollbar-thin">
-              {bulk.items.map((it) => (
-                <div
-                  key={it.id}
-                  className={`flex gap-3 rounded-lg border p-2 ${
-                    it.status === "done"
-                      ? "border-emerald-500/40 bg-emerald-500/5"
-                      : it.status === "error"
-                      ? "border-red-500/40 bg-red-500/5"
-                      : it.status === "uploading"
-                      ? "border-brand-sky bg-sky-500/5"
-                      : "border-bg-700 bg-bg-900"
-                  }`}
-                >
-                  {/* Preview */}
-                  <div className="flex-shrink-0">
-                    {it.type === "video" ? (
-                      <div className="flex h-16 w-16 items-center justify-center rounded bg-bg-800 text-2xl">
-                        🎬
-                      </div>
-                    ) : (
-                      <img
-                        src={it.base64}
-                        alt={it.title}
-                        className="h-16 w-16 rounded object-cover"
-                      />
-                    )}
-                  </div>
-
-                  {/* Form */}
-                  <div className="flex-1 space-y-1.5">
-                    <input
-                      className={inputCls + " text-xs"}
-                      placeholder="Title"
-                      value={it.title}
-                      onChange={(e) => updateBulkItem(it.id, { title: e.target.value })}
-                    />
-                    <input
-                      className={inputCls + " text-xs"}
-                      placeholder="Caption (opsional, pakai shared kalau kosong)"
-                      value={it.caption}
-                      onChange={(e) => updateBulkItem(it.id, { caption: e.target.value })}
-                    />
-                    <div className="flex items-center justify-between text-[10px] text-fg-500">
-                      <span>
-                        {formatFileSize(it.file.size)} ·{" "}
-                        {it.file.type.split("/")[1]?.toUpperCase()}
-                      </span>
-                      <span>
-                        {it.status === "done" && "✅ Sukses"}
-                        {it.status === "error" && (
-                          <span className="text-brand-rose" title={it.error}>
-                            ❌ {it.error?.slice(0, 30)}
-                          </span>
-                        )}
-                        {it.status === "uploading" && (
-                          <span className="text-brand-sky">⏳ Uploading...</span>
-                        )}
-                        {it.status === "pending" && "⏸ Pending"}
-                      </span>
-                    </div>
-                  </div>
-
+        {/* Rows */}
+        <div className="mb-4 max-h-[55vh] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
+          {bulk.items.map((it, idx) => (
+            <div
+              key={it.id}
+              className={`rounded-lg border p-3 ${
+                it.status === "done"
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : it.status === "error"
+                  ? "border-red-500/40 bg-red-500/5"
+                  : it.status === "uploading"
+                  ? "border-brand-sky bg-sky-500/5"
+                  : "border-bg-700 bg-bg-900"
+              }`}
+            >
+              {/* Header row: nomor + status + delete */}
+              <div className="mb-2 flex items-center justify-between">
+                <span className="rounded bg-bg-700 px-2 py-0.5 text-[10px] font-bold text-fg-300">
+                  #{idx + 1}
+                </span>
+                <div className="flex items-center gap-2">
+                  {it.status === "done" && (
+                    <span className="text-[10px] font-bold text-brand-emerald">
+                      ✅ Sukses
+                    </span>
+                  )}
+                  {it.status === "error" && (
+                    <span
+                      className="text-[10px] font-bold text-brand-rose"
+                      title={it.error}
+                    >
+                      ❌ {it.error?.slice(0, 30)}
+                    </span>
+                  )}
+                  {it.status === "uploading" && (
+                    <span className="text-[10px] font-bold text-brand-sky">
+                      ⏳ Uploading...
+                    </span>
+                  )}
                   <button
                     onClick={() => removeBulkItem(it.id)}
                     disabled={bulk.processing}
-                    className="self-start text-fg-500 hover:text-brand-rose disabled:opacity-30"
-                    title="Hapus dari list"
+                    className="rounded bg-red-950/50 px-2 py-1 text-[10px] text-brand-rose hover:bg-red-950 disabled:opacity-30"
+                    title="Hapus baris"
                   >
                     ✕
                   </button>
                 </div>
-              ))}
-            </div>
-
-            {/* Progress bar */}
-            {bulk.processing && (
-              <div className="mt-3">
-                <div className="mb-1 flex justify-between text-[10px]">
-                  <span className="text-fg-400">Uploading...</span>
-                  <span className="font-bold text-brand-sky">
-                    {bulk.progress.done} / {bulk.progress.total}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-bg-700">
-                  <div
-                    className="h-full rounded-full bg-brand-sky transition-all"
-                    style={{
-                      width: `${
-                        (bulk.progress.done / Math.max(1, bulk.progress.total)) * 100
-                      }%`,
-                    }}
-                  />
-                </div>
               </div>
-            )}
+
+              {/* Tipe + Title */}
+              <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <select
+                  className={inputCls + " text-xs"}
+                  value={it.type}
+                  onChange={(e) =>
+                    updateBulkItem(it.id, {
+                      type: e.target.value as "foto" | "video",
+                    })
+                  }
+                >
+                  <option value="foto">📷 Foto</option>
+                  <option value="video">🎬 Video</option>
+                </select>
+                <input
+                  className={inputCls + " text-xs md:col-span-2"}
+                  placeholder="Title (judul postingan)"
+                  value={it.title}
+                  onChange={(e) =>
+                    updateBulkItem(it.id, { title: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* Caption */}
+              <input
+                className={inputCls + " mb-2 text-xs"}
+                placeholder="Caption (opsional, pakai shared kalau kosong)"
+                value={it.caption}
+                onChange={(e) =>
+                  updateBulkItem(it.id, { caption: e.target.value })
+                }
+              />
+
+              {/* Foto upload OR Video link */}
+              {it.type === "foto" ? (
+                <div className="rounded border border-bg-700 bg-bg-800 p-2">
+                  {it.base64 ? (
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={it.base64}
+                        alt={it.title || "preview"}
+                        className="h-16 w-16 rounded object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[10px] text-fg-300" title={it.fileName}>
+                          📁 {it.fileName}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-fg-500">
+                          {formatFileSize(it.fileSize)}
+                        </div>
+                      </div>
+                      <label className="cursor-pointer rounded border border-bg-700 px-2 py-1 text-[10px] text-fg-400 hover:border-brand-sky hover:text-fg-100">
+                        Ganti
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => onBulkRowFile(it.id, e)}
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="block cursor-pointer rounded border border-dashed border-bg-700 p-3 text-center text-xs text-fg-400 hover:border-brand-sky hover:text-fg-200">
+                      📷 Klik untuk pilih image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => onBulkRowFile(it.id, e)}
+                      />
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="url"
+                  className={inputCls + " text-xs"}
+                  placeholder="🔗 Link Video (Google Drive / YouTube / dll)"
+                  value={it.link}
+                  onChange={(e) =>
+                    updateBulkItem(it.id, { link: e.target.value })
+                  }
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar saat uploading */}
+        {bulk.processing && (
+          <div className="mb-4">
+            <div className="mb-1 flex justify-between text-[10px]">
+              <span className="text-fg-400">Uploading...</span>
+              <span className="font-bold text-brand-sky">
+                {bulk.progress.done} / {bulk.progress.total}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-700">
+              <div
+                className="h-full rounded-full bg-brand-sky transition-all"
+                style={{
+                  width: `${
+                    (bulk.progress.done / Math.max(1, bulk.progress.total)) * 100
+                  }%`,
+                }}
+              />
+            </div>
           </div>
         )}
 
@@ -1255,7 +1322,7 @@ export default function AssetsPage() {
           >
             {bulk.processing
               ? `Uploading ${bulk.progress.done}/${bulk.progress.total}...`
-              : `⚡ Upload Semua (${bulk.items.length})`}
+              : `Simpan Semua (${bulk.items.length})`}
           </button>
         </div>
       </Modal>
