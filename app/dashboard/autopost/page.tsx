@@ -57,8 +57,6 @@ function AutoPostInner() {
   const [tgConns, setTgConns] = useState<TelegramConn[]>([]);
   const [twPosts, setTwPosts] = useState<TwitterPost[]>([]);
   const [tgPosts, setTgPosts] = useState<SocialPost[]>([]);
-  const [sharedBotToken, setSharedBotToken] = useState<string>(""); // bot token bersama dari admin/anggota lain
-  const [sharedBotUsername, setSharedBotUsername] = useState<string>("");
 
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
@@ -69,7 +67,6 @@ function AutoPostInner() {
 
   // Telegram setup form
   const [showTgSetup, setShowTgSetup] = useState(false);
-  const [useCustomToken, setUseCustomToken] = useState(false); // override pakai bot lain
   const [tgForm, setTgForm] = useState({
     owner: "",
     bot_token: "",
@@ -106,24 +103,6 @@ function AutoPostInner() {
     setTwPosts((twP.data as TwitterPost[]) || []);
     setTgPosts((tgP.data as SocialPost[]) || []);
 
-    // Fetch any existing bot_token (shared across all users) — biar member tidak perlu input token
-    const { data: anyTg } = await supabase
-      .from("telegram_connections")
-      .select("bot_token")
-      .limit(1)
-      .order("created_at", { ascending: true })
-      .maybeSingle();
-    if (anyTg?.bot_token) {
-      setSharedBotToken(anyTg.bot_token);
-      // Fetch bot username dari Telegram API biar member tau bot mana yg di-invite
-      try {
-        const r = await fetch(
-          `https://api.telegram.org/bot${anyTg.bot_token}/getMe`
-        );
-        const j = await r.json();
-        if (j.ok && j.result?.username) setSharedBotUsername(j.result.username);
-      } catch {}
-    }
   };
 
   useEffect(() => {
@@ -180,27 +159,22 @@ function AutoPostInner() {
   const saveTelegramConn = async () => {
     if (!tgForm.owner) return toast("Pemegang wajib", true);
     if (!tgForm.chat_id.trim()) return toast("Chat ID / Channel wajib", true);
+    if (!tgForm.bot_token.trim()) return toast("Bot Token wajib untuk grup ini", true);
 
-    // Auto-reuse token: prioritas (1) input user, (2) koneksi sendiri, (3) bot bersama
-    let tokenToUse = tgForm.bot_token.trim();
-    if (!tokenToUse && tgConns.length > 0) tokenToUse = tgConns[0].bot_token;
-    if (!tokenToUse && sharedBotToken) tokenToUse = sharedBotToken;
-    if (!tokenToUse) {
-      return toast("Bot token wajib untuk koneksi pertama", true);
+    const tokenToUse = tgForm.bot_token.trim();
+
+    // Validasi bot token dengan getMe + cek apakah bot udah member di chat
+    let botUsername = "";
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${tokenToUse}/getMe`);
+      const j = await res.json();
+      if (!j.ok) return toast(`Bot Token invalid: ${j.description}`, true);
+      botUsername = j.result?.username || "";
+    } catch {
+      return toast("Tidak bisa verifikasi Bot Token", true);
     }
 
-    // Validasi bot token dengan getMe (hanya kalau token baru)
-    if (tgForm.bot_token.trim()) {
-      try {
-        const res = await fetch(`https://api.telegram.org/bot${tokenToUse}/getMe`);
-        const j = await res.json();
-        if (!j.ok) return toast(`Bot invalid: ${j.description}`, true);
-      } catch {
-        return toast("Tidak bisa verifikasi bot token", true);
-      }
-    }
-
-    // Validasi chat_id: cek apakah bot bisa kirim ke chat ini
+    // Validasi chat_id + cek apakah bot udah member di chat
     try {
       const chatTest = await fetch(
         `https://api.telegram.org/bot${tokenToUse}/getChat?chat_id=${encodeURIComponent(
@@ -210,7 +184,28 @@ function AutoPostInner() {
       const j = await chatTest.json();
       if (!j.ok) {
         return toast(
-          `Bot tidak bisa akses channel: ${j.description}. Pastikan bot sudah di-invite sebagai admin.`,
+          `Bot ${botUsername ? `@${botUsername}` : ""} tidak bisa akses chat: ${
+            j.description
+          }. Invite dulu @${botUsername} ke grup/channel ini.`,
+          true
+        );
+      }
+      // Sekalian test send untuk pastikan bot bener-bener bisa kirim
+      const sendTest = await fetch(
+        `https://api.telegram.org/bot${tokenToUse}/sendChatAction`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: tgForm.chat_id.trim(),
+            action: "typing",
+          }),
+        }
+      );
+      const sendJson = await sendTest.json();
+      if (!sendJson.ok) {
+        return toast(
+          `Bot @${botUsername} belum jadi member chat ini. Invite dulu sebagai admin/member, lalu coba lagi.`,
           true
         );
       }
@@ -229,7 +224,6 @@ function AutoPostInner() {
     logAs(session, "Connect Telegram", "Auto Post", tgForm.chat_title || tgForm.chat_id);
     toast("Channel Telegram ditambahkan!");
     setShowTgSetup(false);
-    setUseCustomToken(false);
     setTgForm({ owner: myName, bot_token: "", chat_id: "", chat_title: "" });
     load();
   };
@@ -396,59 +390,36 @@ function AutoPostInner() {
         {/* Telegram setup form */}
         {tab === "telegram" && showTgSetup && (
           <div className="mb-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4">
-            {(tgConns.length > 0 || sharedBotToken) && !useCustomToken ? (
-              // Sudah ada bot yang tersimpan — cukup chat_id
-              <div className="mb-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-brand-emerald">
-                ✓ Bot sudah tersedia
-                {sharedBotUsername && (
-                  <>
-                    : <strong>@{sharedBotUsername}</strong>
-                  </>
-                )}
-                . Cukup <strong>invite bot ke channel/grup baru sebagai member/admin</strong>, lalu
-                isi Chat ID.
-                {isMember && (
-                  <div className="mt-1 text-brand-sky">
-                    💡 Kamu tidak perlu buat bot sendiri — pakai bot yang sudah ada
-                    {sharedBotUsername && ` (@${sharedBotUsername})`}
-                  </div>
-                )}
-                {!isMember && (
-                  <button
-                    onClick={() => setUseCustomToken(true)}
-                    className="mt-2 block text-[11px] text-brand-sky hover:underline"
+            <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs text-fg-300">
+              <strong className="text-brand-sky">📌 Setiap grup pakai bot sendiri (1 bot = 1 grup)</strong>
+              <ol className="ml-5 mt-1 list-decimal text-[11px] text-fg-400">
+                <li>
+                  Buat bot baru di{" "}
+                  <a
+                    href="https://t.me/BotFather"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand-sky hover:underline"
                   >
-                    + Pakai bot lain (input token baru)
-                  </button>
-                )}
+                    @BotFather
+                  </a>{" "}
+                  → /newbot → dapat <strong>Bot Token</strong> baru
+                </li>
+                <li>
+                  <strong>Invite bot itu ke grup/channel target</strong> (member kalau grup, admin
+                  kalau channel)
+                </li>
+                <li>
+                  Cari Chat ID grup: pakai <code>@channelusername</code> kalau public, atau{" "}
+                  <code className="rounded bg-bg-800 px-1">getUpdates</code> untuk private group
+                </li>
+                <li>Paste Bot Token + Chat ID di form bawah → Save</li>
+              </ol>
+              <div className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[10px] text-brand-amber">
+                ⚠ Sistem akan auto-validate: bot harus sudah jadi member grup, kalau belum →
+                error jelas dengan instruksi
               </div>
-            ) : (
-              <div className="mb-3 text-xs text-fg-300">
-                <strong>Setup pertama — Bot Token wajib (sekali saja):</strong>
-                <ol className="ml-5 mt-1 list-decimal text-[11px] text-fg-400">
-                  <li>
-                    Buka{" "}
-                    <a
-                      href="https://t.me/BotFather"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-brand-sky hover:underline"
-                    >
-                      @BotFather
-                    </a>{" "}
-                    → /newbot → kasih nama → dapat Bot Token (SEKALI SAJA)
-                  </li>
-                  <li>Invite bot ke channel/grup sebagai admin</li>
-                  <li>
-                    Untuk channel public: pakai <code>@channelusername</code>. Untuk private: cari chat_id pakai{" "}
-                    <code className="rounded bg-bg-800 px-1">getUpdates</code>
-                  </li>
-                </ol>
-                <div className="mt-1 text-brand-emerald">
-                  💡 Setelah token disimpan 1x, channel baru cuma perlu Chat ID
-                </div>
-              </div>
-            )}
+            </div>
 
             <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
               <input
@@ -464,27 +435,12 @@ function AutoPostInner() {
                 value={tgForm.chat_title}
                 onChange={(e) => setTgForm({ ...tgForm, chat_title: e.target.value })}
               />
-              {(tgConns.length === 0 && !sharedBotToken) || useCustomToken ? (
-                <div className="md:col-span-2">
-                  <input
-                    className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky"
-                    placeholder="Bot Token (123456:ABC-DEF...)"
-                    value={tgForm.bot_token}
-                    onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
-                  />
-                  {useCustomToken && (
-                    <button
-                      onClick={() => {
-                        setUseCustomToken(false);
-                        setTgForm({ ...tgForm, bot_token: "" });
-                      }}
-                      className="mt-1 text-[10px] text-fg-500 hover:text-fg-300"
-                    >
-                      ← Pakai bot {sharedBotUsername ? `@${sharedBotUsername}` : "yang sudah ada"} saja
-                    </button>
-                  )}
-                </div>
-              ) : null}
+              <input
+                className="rounded-lg border border-brand-sky bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
+                placeholder="🤖 Bot Token (wajib) — 123456:ABC-DEF..."
+                value={tgForm.bot_token}
+                onChange={(e) => setTgForm({ ...tgForm, bot_token: e.target.value })}
+              />
               <input
                 className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none focus:border-brand-sky md:col-span-2"
                 placeholder="Chat ID (mis: -1001234567890) atau @channelusername"

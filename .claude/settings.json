@@ -60,7 +60,9 @@
       "Bash(curl -s -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpcmVxeHhxeHhreGJjZW1jcG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDAyMjUsImV4cCI6MjA5MTM3NjIyNX0.NNTcqbgbDRy6m95hu1K7pQi10jH52n3HUkSubUlK7sM' 'https://fireqxxqxxkxbcemcpmj.supabase.co/rest/v1/telegram_connections?select=bot_token&limit=1')",
       "Bash(curl -s -X POST \"https://socmedanalytics.com/api/telegram/send\" -H \"Content-Type: application/json\" -d '{\"connection_id\":1,\"text\":\"🚀 <b>Test Auto-Post Dashboard</b>\\\\n\\\\n✅ Telegram bot terhubung\\\\n📊 Channel NITROSTREAM siap broadcast\\\\n\\\\nDikirim langsung dari API server.\",\"posted_by\":\"admin\"}')",
       "Bash(curl -sL \"https://placehold.co/800x400/38bdf8/0f172a/png?text=SocMed+Analytics+Dashboard\" -o /tmp/test.png)",
-      "Bash(curl -s -X POST \"https://socmedanalytics.com/api/twitter/tweet\" -H \"Content-Type: application/json\" -d '{\"text\":\"🚀 Test auto-post dari SocMed Analytics Dashboard!\\\\n\\\\n✅ Twitter API terhubung\\\\n📊 Multi-platform broadcast aktif\",\"owner\":\"admin\",\"posted_by\":\"admin\",\"connection_id\":1}')"
+      "Bash(curl -s -X POST \"https://socmedanalytics.com/api/twitter/tweet\" -H \"Content-Type: application/json\" -d '{\"text\":\"🚀 Test auto-post dari SocMed Analytics Dashboard!\\\\n\\\\n✅ Twitter API terhubung\\\\n📊 Multi-platform broadcast aktif\",\"owner\":\"admin\",\"posted_by\":\"admin\",\"connection_id\":1}')",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
