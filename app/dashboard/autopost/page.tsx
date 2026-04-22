@@ -194,6 +194,146 @@ function AutoPostInner() {
     setMediaList((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // Convert dataURL ke Blob (untuk direct upload tanpa lewat server)
+  const dataURLtoBlob = (dataURL: string): { blob: Blob; mime: string; ext: string } | null => {
+    const m = dataURL.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    const [, mime, b64] = m;
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return {
+      blob: new Blob([arr], { type: mime }),
+      mime,
+      ext: mime.split("/")[1]?.split(";")[0] || "bin",
+    };
+  };
+
+  // Direct upload ke Telegram (bypass Vercel — bisa file gede sampai 50MB)
+  const sendDirectToTelegram = async (
+    conn: TelegramConn,
+    msgText: string,
+    list: typeof mediaList,
+    singleB64: string,
+    singleType: "photo" | "video" | null
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    chat_title?: string;
+    media_count?: number;
+    message_id?: string;
+  }> => {
+    const baseUrl = `https://api.telegram.org/bot${conn.bot_token}`;
+
+    // Pilih item utk upload
+    const items: Array<{ base64: string; type: "photo" | "video"; name: string }> =
+      list.length > 0
+        ? list
+        : singleB64
+        ? [{ base64: singleB64, type: singleType || "photo", name: "media" }]
+        : [];
+
+    let endpoint: string;
+    const formData = new FormData();
+    formData.append("chat_id", conn.chat_id);
+
+    if (items.length === 0) {
+      endpoint = "sendMessage";
+      formData.append("text", msgText);
+      formData.append("parse_mode", "HTML");
+    } else if (items.length === 1) {
+      const it = items[0];
+      const file = dataURLtoBlob(it.base64);
+      if (!file) return { ok: false, error: "Format media tidak valid" };
+      endpoint = it.type === "video" ? "sendVideo" : "sendPhoto";
+      const fieldName = it.type === "video" ? "video" : "photo";
+      formData.append(fieldName, file.blob, `${it.name}.${file.ext}`);
+      if (msgText) {
+        formData.append("caption", msgText);
+        formData.append("parse_mode", "HTML");
+      }
+      if (it.type === "video") formData.append("supports_streaming", "true");
+    } else {
+      endpoint = "sendMediaGroup";
+      const mediaArray: Array<{
+        type: string;
+        media: string;
+        caption?: string;
+        parse_mode?: string;
+        supports_streaming?: boolean;
+      }> = [];
+      items.forEach((it, idx) => {
+        const file = dataURLtoBlob(it.base64);
+        if (!file) return;
+        const attachKey = `file${idx}`;
+        formData.append(attachKey, file.blob, `${it.name}.${file.ext}`);
+        const item: {
+          type: string;
+          media: string;
+          caption?: string;
+          parse_mode?: string;
+          supports_streaming?: boolean;
+        } = {
+          type: it.type,
+          media: `attach://${attachKey}`,
+        };
+        if (it.type === "video") item.supports_streaming = true;
+        if (idx === 0 && msgText) {
+          item.caption = msgText;
+          item.parse_mode = "HTML";
+        }
+        mediaArray.push(item);
+      });
+      formData.append("media", JSON.stringify(mediaArray));
+    }
+
+    try {
+      const res = await fetch(`${baseUrl}/${endpoint}`, {
+        method: "POST",
+        body: formData,
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        return { ok: false, error: j.description || "Telegram error" };
+      }
+      const msgId = Array.isArray(j.result)
+        ? j.result[0]?.message_id?.toString()
+        : j.result?.message_id?.toString();
+
+      // Log ke social_posts (small JSON, gak kena limit Vercel)
+      const mediaCount = items.length;
+      const mediaTypeLog =
+        mediaCount > 1
+          ? `album-${mediaCount}`
+          : mediaCount === 1
+          ? items[0].type
+          : null;
+      try {
+        await supabase.from("social_posts").insert({
+          platform: "Telegram",
+          posted_by: myName,
+          target_owner: conn.owner_name,
+          content: msgText || "",
+          media_type: mediaTypeLog,
+          external_id: msgId,
+          status: "posted",
+        });
+      } catch {}
+
+      return {
+        ok: true,
+        chat_title: conn.chat_title,
+        media_count: mediaCount,
+        message_id: msgId,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "network error",
+      };
+    }
+  };
+
   // Twitter actions
   const connectTwitter = () => {
     window.location.href = `/api/twitter/auth?owner=${encodeURIComponent(owner)}`;
@@ -330,28 +470,43 @@ function AutoPostInner() {
         }
         const chosen =
           availConns.find((c) => c.id === selectedConnId) || availConns[0];
-        const res = await fetch("/api/telegram/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connection_id: chosen.id,
-            text,
-            // Multi-media (Telegram media group)
-            media_list: mediaList.length > 0 ? mediaList : undefined,
-            // Backward-compat: single media
-            media_base64: mediaList.length === 0 && mediaBase64 ? mediaBase64 : undefined,
-            media_type: mediaList.length === 0 ? mediaType : undefined,
-            posted_by: myName,
-          }),
-        });
-        const j = await res.json();
-        if (!res.ok) {
-          toast(`Gagal: ${j.error || "error"}`, true);
+
+        // Hitung total ukuran media (rough estimate dari base64)
+        const totalSize = mediaList.reduce((s, m) => s + m.base64.length * 0.75, 0) +
+          (mediaBase64 ? mediaBase64.length * 0.75 : 0);
+        const useDirectUpload = totalSize > 3 * 1024 * 1024; // > 3MB → bypass Vercel
+
+        let result;
+        if (useDirectUpload) {
+          // === DIRECT upload ke Telegram (bypass Vercel) ===
+          result = await sendDirectToTelegram(chosen, text, mediaList, mediaBase64, mediaType);
+        } else {
+          // === Via API route (untuk text/foto kecil — log otomatis) ===
+          const res = await fetch("/api/telegram/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              connection_id: chosen.id,
+              text,
+              media_list: mediaList.length > 0 ? mediaList : undefined,
+              media_base64: mediaList.length === 0 && mediaBase64 ? mediaBase64 : undefined,
+              media_type: mediaList.length === 0 ? mediaType : undefined,
+              posted_by: myName,
+            }),
+          });
+          const txt = await res.text();
+          let j: { error?: string; chat_title?: string; media_count?: number } = {};
+          try { j = JSON.parse(txt); } catch { j = { error: txt.slice(0, 100) }; }
+          result = { ok: res.ok, error: j.error, chat_title: j.chat_title, media_count: j.media_count };
+        }
+
+        if (!result.ok) {
+          toast(`Gagal: ${result.error || "error"}`, true);
         } else {
           logAs(session, "Post Telegram", "Auto Post", text.slice(0, 80));
           toast(
-            `Terkirim ke ${j.chat_title || "Telegram"}!${
-              j.media_count > 1 ? ` (${j.media_count} media)` : ""
+            `Terkirim ke ${result.chat_title || "Telegram"}!${
+              (result.media_count || 0) > 1 ? ` (${result.media_count} media)` : ""
             }`
           );
           setText("");
