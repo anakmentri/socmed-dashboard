@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase";
 import { Asset } from "@/lib/types";
 import { DateNav } from "@/components/DateNav";
 import { today, fmtIdDate, packAssetUrl, unpackAssetUrl, logAs } from "@/lib/utils";
-import { useCachedData } from "@/hooks/useCachedData";
 import { invalidateCache } from "@/lib/cache";
 
 type Row = Asset & { id: number };
@@ -42,27 +41,19 @@ export default function AssetsPage() {
   const canUpload =
     session?.role === "admin" || ALLOWED_UPLOADERS.includes(session?.memberName || "");
 
-  // Fetcher dengan logging error spesifik
+  // SINGLE fetcher — 1 request ke Supabase, hindari race + 500 error karena dobel request
   const fetchAssets = async (): Promise<Row[]> => {
     const { data, error } = await supabase
       .from("assets")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select("id,name,type,url,uploaded_by")
+      .order("created_at", { ascending: false })
+      .limit(500);
     if (error) {
       console.error("[assets] fetch error:", error);
       throw error;
     }
-    if (!data || !Array.isArray(data)) {
-      console.warn("[assets] empty/invalid response", data);
-      return [];
-    }
-    const mapped = (data as Array<{
-      id: number;
-      name: string;
-      type: string;
-      url: string;
-      uploaded_by: string;
-    }>).map((a) => {
+    if (!data || !Array.isArray(data)) return [];
+    const mapped = data.map((a) => {
       const u = unpackAssetUrl(a.url);
       return {
         id: a.id,
@@ -81,62 +72,56 @@ export default function AssetsPage() {
     return mapped;
   };
 
-  // Fetcher untuk CACHE: strip image (base64 gede) biar muat di localStorage
-  const fetchAssetsLight = async (): Promise<Row[]> => {
-    const fullRows = await fetchAssets();
-    return fullRows.map((r) => ({ ...r, image: r.image ? "[cached]" : "" }));
+  // Local state — sumber utama untuk render. Fetch sekali saat mount.
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isStale, setIsStale] = useState(false);
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const fresh = await fetchAssets();
+      setRows(fresh);
+      setIsStale(false);
+    } catch (e) {
+      console.error("[assets] reload failed:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const {
-    data: rowsCached,
-    loading,
-    refresh,
-    isStale,
-    mutate,
-  } = useCachedData<Row[]>({
-    key: ASSETS_CACHE_KEY,
-    fetcher: fetchAssetsLight, // cache versi tanpa image base64
-    preserveOnEmpty: true,
-  });
-
-  // Local fresh state — diisi dari fetch full (dengan image) saat mount
-  const [freshRows, setFreshRows] = useState<Row[] | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    fetchAssets()
-      .then((rows) => {
-        if (!cancelled) setFreshRows(rows);
-      })
-      .catch((e) => console.error("[assets] full fetch failed:", e));
-    return () => {
-      cancelled = true;
+    reload();
+    // Re-fetch saat tab balik aktif (kalau sudah > 5 menit)
+    const onFocus = () => {
+      reload();
     };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pakai fresh kalau ada (dengan image full), fallback ke cache
-  const rows: Row[] = freshRows || rowsCached || [];
+  // Mark stale setiap 5 menit
+  useEffect(() => {
+    const t = setInterval(() => setIsStale(true), 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  // Force fresh dari server (refresh cache + freshRows)
+  // Compatibility shims — UI lain pake nama lama
+  const refresh = reload;
+
+  // Force fresh dari server
   const load = async () => {
     invalidateCache(ASSETS_CACHE_KEY);
-    const [, full] = await Promise.all([refresh(), fetchAssets()]);
-    setFreshRows(full);
+    await reload();
   };
 
   // Optimistic update — pakai setelah add/edit/delete supaya UI tidak flicker
-  const optimisticAdd = (newRow: Row) => {
-    setFreshRows((prev) => [newRow, ...(prev || [])]);
-    mutate((prev) => [newRow, ...(prev || [])]);
-  };
-  const optimisticUpdate = (id: number, patch: Partial<Row>) => {
-    setFreshRows((prev) => (prev || []).map((r) => (r.id === id ? { ...r, ...patch } : r)));
-    mutate((prev) => (prev || []).map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  };
-  const optimisticRemove = (id: number) => {
-    setFreshRows((prev) => (prev || []).filter((r) => r.id !== id));
-    mutate((prev) => (prev || []).filter((r) => r.id !== id));
-  };
+  const optimisticAdd = (newRow: Row) => setRows((prev) => [newRow, ...prev]);
+  const optimisticUpdate = (id: number, patch: Partial<Row>) =>
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const optimisticRemove = (id: number) =>
+    setRows((prev) => prev.filter((r) => r.id !== id));
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
   const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
@@ -251,7 +236,6 @@ export default function AssetsPage() {
     }
     close();
     // Background refresh untuk sync data baru, tapi UI sudah update dulu
-    fetchAssets().then(setFreshRows).catch(() => {});
     refresh();
   };
 
@@ -264,7 +248,6 @@ export default function AssetsPage() {
     if (error) {
       // Rollback kalau gagal — revalidate dari server
       toast(`Gagal hapus: ${error.message}`, true);
-      fetchAssets().then(setFreshRows).catch(() => {});
       refresh();
       return;
     }
