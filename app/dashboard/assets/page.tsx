@@ -42,12 +42,21 @@ export default function AssetsPage() {
   const canUpload =
     session?.role === "admin" || ALLOWED_UPLOADERS.includes(session?.memberName || "");
 
+  // Fetcher dengan logging error spesifik
   const fetchAssets = async (): Promise<Row[]> => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("assets")
       .select("*")
       .order("created_at", { ascending: false });
-    return ((data || []) as Array<{
+    if (error) {
+      console.error("[assets] fetch error:", error);
+      throw error;
+    }
+    if (!data || !Array.isArray(data)) {
+      console.warn("[assets] empty/invalid response", data);
+      return [];
+    }
+    const mapped = (data as Array<{
       id: number;
       name: string;
       type: string;
@@ -68,6 +77,14 @@ export default function AssetsPage() {
         status: u.status as "available" | "used",
       };
     });
+    console.log(`[assets] loaded ${mapped.length} rows`);
+    return mapped;
+  };
+
+  // Fetcher untuk CACHE: strip image (base64 gede) biar muat di localStorage
+  const fetchAssetsLight = async (): Promise<Row[]> => {
+    const fullRows = await fetchAssets();
+    return fullRows.map((r) => ({ ...r, image: r.image ? "[cached]" : "" }));
   };
 
   const {
@@ -78,23 +95,48 @@ export default function AssetsPage() {
     mutate,
   } = useCachedData<Row[]>({
     key: ASSETS_CACHE_KEY,
-    fetcher: fetchAssets,
+    fetcher: fetchAssetsLight, // cache versi tanpa image base64
     preserveOnEmpty: true,
   });
-  const rows: Row[] = rowsCached || [];
 
-  // Force fresh dari server (untuk tombol Refresh manual)
+  // Local fresh state — diisi dari fetch full (dengan image) saat mount
+  const [freshRows, setFreshRows] = useState<Row[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAssets()
+      .then((rows) => {
+        if (!cancelled) setFreshRows(rows);
+      })
+      .catch((e) => console.error("[assets] full fetch failed:", e));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pakai fresh kalau ada (dengan image full), fallback ke cache
+  const rows: Row[] = freshRows || rowsCached || [];
+
+  // Force fresh dari server (refresh cache + freshRows)
   const load = async () => {
     invalidateCache(ASSETS_CACHE_KEY);
-    await refresh();
+    const [, full] = await Promise.all([refresh(), fetchAssets()]);
+    setFreshRows(full);
   };
 
   // Optimistic update — pakai setelah add/edit/delete supaya UI tidak flicker
-  const optimisticAdd = (newRow: Row) => mutate((prev) => [newRow, ...(prev || [])]);
-  const optimisticUpdate = (id: number, patch: Partial<Row>) =>
+  const optimisticAdd = (newRow: Row) => {
+    setFreshRows((prev) => [newRow, ...(prev || [])]);
+    mutate((prev) => [newRow, ...(prev || [])]);
+  };
+  const optimisticUpdate = (id: number, patch: Partial<Row>) => {
+    setFreshRows((prev) => (prev || []).map((r) => (r.id === id ? { ...r, ...patch } : r)));
     mutate((prev) => (prev || []).map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const optimisticRemove = (id: number) =>
+  };
+  const optimisticRemove = (id: number) => {
+    setFreshRows((prev) => (prev || []).filter((r) => r.id !== id));
     mutate((prev) => (prev || []).filter((r) => r.id !== id));
+  };
 
   const [typeFilter, setTypeFilter] = useState<"all" | "foto" | "video">("all");
   const [providerFilter, setProviderFilter] = useState<"all" | "Tlegu" | "Rully" | "Lainnya">("all");
@@ -209,6 +251,7 @@ export default function AssetsPage() {
     }
     close();
     // Background refresh untuk sync data baru, tapi UI sudah update dulu
+    fetchAssets().then(setFreshRows).catch(() => {});
     refresh();
   };
 
@@ -221,6 +264,7 @@ export default function AssetsPage() {
     if (error) {
       // Rollback kalau gagal — revalidate dari server
       toast(`Gagal hapus: ${error.message}`, true);
+      fetchAssets().then(setFreshRows).catch(() => {});
       refresh();
       return;
     }
