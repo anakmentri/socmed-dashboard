@@ -36,15 +36,24 @@ export default function AssetsPage() {
     data: empty,
   });
 
-  // Cek availability Storage bucket sekali saat mount (untuk banner warning)
+  // Cek availability Storage bucket: coba upload tiny file
   const [bucketReady, setBucketReady] = useState<boolean | null>(null);
   useEffect(() => {
     (async () => {
       try {
-        const { error } = await supabase.storage.from("assets").list("", { limit: 1 });
-        setBucketReady(!error);
+        // Test upload tiny file ke folder _healthcheck
+        const testBlob = new Blob(["ok"], { type: "text/plain" });
+        const fileName = `_healthcheck/${Date.now()}.txt`;
+        const { error } = await supabase.storage
+          .from("assets")
+          .upload(fileName, testBlob, { upsert: true });
         if (error) {
-          console.warn("[storage] bucket check failed:", error.message);
+          console.warn("[storage] healthcheck failed:", error.message);
+          setBucketReady(false);
+        } else {
+          setBucketReady(true);
+          // Cleanup
+          supabase.storage.from("assets").remove([fileName]).then(() => {});
         }
       } catch {
         setBucketReady(false);
@@ -489,8 +498,8 @@ export default function AssetsPage() {
 
   /**
    * Upload image base64 ke Supabase Storage.
-   * Kalau bucket belum dibuat (Bucket not found), FALLBACK ke base64 (legacy mode)
-   * — upload tetap jalan, cuma pakai cara lama yang berat.
+   * Pakai signed URL (1 tahun expiry) — works untuk private bucket TANPA harus public.
+   * Kalau bucket belum dibuat → fallback ke base64 (legacy).
    */
   const uploadBase64ToStorage = async (
     base64: string,
@@ -505,23 +514,37 @@ export default function AssetsPage() {
     for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     const blob = new Blob([arr], { type: mime });
     const fileName = `${type}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-    const { error } = await supabase.storage.from("assets").upload(fileName, blob, {
-      cacheControl: "31536000",
-      upsert: false,
-    });
-    if (error) {
-      // FALLBACK: kalau bucket belum dibuat → simpan sebagai base64 (legacy)
+
+    const { error: upErr } = await supabase.storage
+      .from("assets")
+      .upload(fileName, blob, { cacheControl: "31536000", upsert: false });
+    if (upErr) {
       if (
-        error.message.toLowerCase().includes("bucket not found") ||
-        error.message.toLowerCase().includes("not_found")
+        upErr.message.toLowerCase().includes("bucket not found") ||
+        upErr.message.toLowerCase().includes("not_found")
       ) {
-        console.warn("[storage] Bucket 'assets' belum ada, fallback ke base64 (legacy)");
-        return base64; // langsung return base64, akan disimpan di url field
+        console.warn("[storage] Bucket 'assets' belum ada, fallback ke base64");
+        return base64;
       }
-      throw new Error(`Storage upload: ${error.message}`);
+      throw new Error(`Storage upload: ${upErr.message}`);
     }
-    const { data: urlData } = supabase.storage.from("assets").getPublicUrl(fileName);
-    return urlData.publicUrl;
+
+    // Coba public URL dulu (kalau bucket public)
+    const { data: pub } = supabase.storage.from("assets").getPublicUrl(fileName);
+    // Verify public URL aktif
+    try {
+      const test = await fetch(pub.publicUrl, { method: "HEAD" });
+      if (test.ok) return pub.publicUrl;
+    } catch {}
+
+    // Bucket private → pakai signed URL (1 tahun expiry, max)
+    const { data: signed, error: sErr } = await supabase.storage
+      .from("assets")
+      .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year
+    if (sErr || !signed?.signedUrl) {
+      throw new Error(`Sign URL: ${sErr?.message || "no URL"}`);
+    }
+    return signed.signedUrl;
   };
 
   // Migration tool — pindahkan base64 lama ke Storage
