@@ -265,9 +265,24 @@ export default function ReportPage() {
       </div>
 
       <div className="space-y-3">
-        {team
-          .filter((t) => !isMember || t.name === myName)
-          .map((t) => {
+        {(() => {
+          const teamNames = new Set(team.map((t) => t.name));
+          const orphanNames = Array.from(
+            new Set(rows.map((r) => r.name).filter((n) => n && !teamNames.has(n)))
+          );
+          const orphanGroups = orphanNames.map((name) => ({
+            name,
+            role: "(tidak terdaftar di tim)",
+            color: "#6b7280",
+            username: `__orphan_${name}`,
+            isOrphan: true,
+          }));
+          const visibleGroups = [
+            ...team.filter((t) => !isMember || t.name === myName).map((t) => ({ ...t, isOrphan: false })),
+            ...(isMember ? [] : orphanGroups),
+          ];
+          return visibleGroups;
+        })().map((t) => {
             const memberRows = rows
               .map((r, i) => ({ r, i }))
               .filter(({ r }) => r.name === t.name);
@@ -282,7 +297,9 @@ export default function ReportPage() {
             return (
               <div
                 key={t.username}
-                className="overflow-hidden rounded-xl border border-bg-700 bg-bg-800"
+                className={`overflow-hidden rounded-xl border bg-bg-800 ${
+                  t.isOrphan ? "border-amber-500/40" : "border-bg-700"
+                }`}
               >
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <button
@@ -294,10 +311,17 @@ export default function ReportPage() {
                       className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
                       style={{ backgroundColor: t.color }}
                     >
-                      {t.name[0]}
+                      {t.name[0] || "?"}
                     </span>
                     <div>
-                      <div className="font-bold text-fg-100">{t.name}</div>
+                      <div className="font-bold text-fg-100 flex items-center gap-2">
+                        {t.name}
+                        {t.isOrphan && (
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                            ⚠ TIDAK DI TIM
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-fg-500">{t.role}</div>
                     </div>
                   </button>
