@@ -106,8 +106,8 @@ function AutoPostInner() {
 
   };
 
+  // Toast handlers for OAuth callback (only run once on mount)
   useEffect(() => {
-    load();
     if (sp.get("connected")) {
       toast(`Twitter @${sp.get("connected")} terhubung!`);
       window.history.replaceState({}, "", "/dashboard/autopost");
@@ -115,6 +115,14 @@ function AutoPostInner() {
     if (sp.get("error")) toast(`Error: ${sp.get("error")}`, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load connections — wait for session to be ready (session?.role exists),
+  // otherwise first call runs as admin (isMember=false) and fetches ALL accounts
+  useEffect(() => {
+    if (!session?.role) return; // session belum siap, jangan fetch dulu
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.role, myName]);
 
   useEffect(() => {
     if (myName) {

@@ -9,3 +9,8 @@ out
 
 .vercel
 .env*.local
+
+# Migration scripts contain hardcoded DB password — never commit
+migration/
+test-*.js
+test-*.ts
