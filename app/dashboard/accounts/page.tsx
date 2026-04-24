@@ -338,8 +338,8 @@ export default function AccountsPage() {
 
     setCheckProgress({ done: 0, total: checks.length });
 
-    // Batch 30 per request (sesuai server limit)
-    const BATCH = 30;
+    // Batch 15 per request (server limit + Vercel timeout safety + Twitter rate-limit aware)
+    const BATCH = 15;
     const chunks: typeof checks[] = [];
     for (let i = 0; i < checks.length; i += BATCH) chunks.push(checks.slice(i, i + BATCH));
 
@@ -347,8 +347,10 @@ export default function AccountsPage() {
     let suspended = 0;
     let active = 0;
     let unknown = 0;
+    let rateLimited = 0;
     const nextResults = { ...checkResults };
     const newlyBanned: number[] = [];
+    const rateLimitedItems: typeof checks = []; // retry queue
 
     for (const chunk of chunks) {
       try {
@@ -366,21 +368,64 @@ export default function AccountsPage() {
           };
           totalChecked++;
           if (r.active === false) {
-            // Confirmed suspended → mark banned
             if (!banned[r.id]) newlyBanned.push(r.id);
             suspended++;
           } else if (r.active === true) {
             active++;
           } else {
-            // Uncertain (null) → JANGAN auto-ban, biar admin manual cek
             unknown++;
+            // Kalau rate limited, masukin queue retry
+            if (r.status === 429) {
+              const item = chunk.find((c) => c.id === r.id);
+              if (item) rateLimitedItems.push(item);
+              rateLimited++;
+            }
           }
         }
         setCheckProgress({ done: totalChecked, total: checks.length });
-        // Update results incrementally so user sees progress
         setCheckResults({ ...nextResults });
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    // Retry rate-limited items dengan delay panjang (60s untuk reset window)
+    if (rateLimitedItems.length > 0) {
+      toast(`⏳ ${rateLimitedItems.length} akun rate-limited, retry setelah 60s...`);
+      await new Promise((r) => setTimeout(r, 60000));
+      const retryChunks: typeof checks[] = [];
+      for (let i = 0; i < rateLimitedItems.length; i += BATCH) {
+        retryChunks.push(rateLimitedItems.slice(i, i + BATCH));
+      }
+      for (const chunk of retryChunks) {
+        try {
+          const res = await fetch("/api/check-account", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ checks: chunk }),
+          });
+          const j = await res.json();
+          for (const r of j.results || []) {
+            nextResults[r.id] = {
+              active: r.active,
+              reason: r.reason,
+              at: new Date().toISOString(),
+            };
+            // Adjust counts: was unknown, now revise
+            unknown--;
+            if (r.active === false) {
+              if (!banned[r.id]) newlyBanned.push(r.id);
+              suspended++;
+            } else if (r.active === true) {
+              active++;
+            } else {
+              unknown++;
+            }
+          }
+          setCheckResults({ ...nextResults });
+        } catch (e) {
+          console.error(e);
+        }
       }
     }
 
@@ -402,7 +447,9 @@ export default function AccountsPage() {
       session,
       "Auto-Check Akun Sosmed",
       "Akun Sosmed",
-      `${totalChecked} dicek: ✅${active} aktif, ⚠${suspended} suspended, ❓${unknown} tidak pasti`
+      `${totalChecked} dicek: ✅${active} aktif, ⚠${suspended} suspended, ❓${unknown} tidak pasti${
+        rateLimited > 0 ? `, 🔁${rateLimited} retry` : ""
+      }`
     );
     toast(
       `✅ ${active} aktif · ⚠ ${suspended} suspended (auto-banned) · ❓ ${unknown} tidak pasti${

@@ -13,44 +13,81 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /**
- * Cek X (Twitter) via Twitter's oembed endpoint.
- * RELIABLE: returns HTTP 200 untuk akun aktif, HTTP 404 untuk akun
- * suspended/dihapus/tidak ada. Tidak butuh auth.
+ * Cek X (Twitter) — pakai 2 layer untuk akurasi maksimal:
+ *
+ * Layer 1: publish.twitter.com/oembed
+ *   - HTTP 404 = pasti tidak ada (suspended/deleted/wrong username)
+ *   - HTTP 200 = NAMA URL valid, TAPI bukan jaminan akun aktif
+ *     (suspended account tetap return 200 di sini — kelemahan oembed)
+ *
+ * Layer 2: syndication.twitter.com/srv/timeline-profile/screen-name/USERNAME
+ *   - Body kecil (~2KB) + "hasResults":false → suspended/empty
+ *   - Body besar (>10KB) + ada screen_name → active dengan tweets
+ *   - Edge case: account active tanpa tweet → bisa kelihatan "kosong"
+ *     → fallback ke unknown
  */
 async function checkTwitter(username: string): Promise<CheckResult> {
   const u = username.replace(/^@/, "").trim();
   if (!u) return { active: null, reason: "Username kosong", status: 0 };
 
-  const oembedUrl = `https://publish.twitter.com/oembed?url=https%3A%2F%2Ftwitter.com%2F${encodeURIComponent(u)}`;
+  // Layer 1: oembed cepat untuk catch yang clearly missing (404)
   try {
-    const res = await fetch(oembedUrl, {
+    const oembedRes = await fetch(
+      `https://publish.twitter.com/oembed?url=https%3A%2F%2Ftwitter.com%2F${encodeURIComponent(u)}`,
+      { method: "GET", headers: { "User-Agent": UA }, signal: AbortSignal.timeout(8000) }
+    );
+    if (oembedRes.status === 404) {
+      return { active: false, reason: "Akun tidak ada (404)", status: 404 };
+    }
+    if (oembedRes.status !== 200) {
+      // 403/5xx → fallback ke layer 2
+    }
+  } catch {
+    // continue to layer 2
+  }
+
+  // Layer 2: syndication timeline — signal kuat: user_id_str hanya muncul kalau akun aktif
+  try {
+    const synUrl = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${encodeURIComponent(u)}`;
+    const res = await fetch(synUrl, {
       method: "GET",
-      headers: { "User-Agent": UA, Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://platform.twitter.com/",
+      },
+      signal: AbortSignal.timeout(12000),
     });
-    const status = res.status;
-    if (status === 200) {
-      return { active: true, reason: "Akun aktif (oembed OK)", status };
+    if (res.status === 429) {
+      // Rate limited — caller harus retry dengan delay
+      return { active: null, reason: "Rate limited (retry nanti)", status: 429 };
     }
-    if (status === 404) {
-      // 404 di oembed = akun suspended ATAU tidak ada ATAU protected
-      // Cek lebih lanjut: fetch profile page untuk konfirmasi
-      const r2 = await fetch(`https://x.com/${encodeURIComponent(u)}`, {
-        method: "GET",
-        headers: { "User-Agent": UA },
-        signal: AbortSignal.timeout(8000),
-      });
-      // X selalu return 200 untuk SPA, tapi kalau redirect bisa kasih hint
-      if (r2.status === 404) {
-        return { active: false, reason: "Akun tidak ada / suspended", status };
-      }
-      // Default: assume suspended berdasarkan oembed 404
-      return { active: false, reason: "Akun tidak ditemukan / suspended", status };
+    if (res.status !== 200) {
+      return { active: null, reason: `Syndication HTTP ${res.status}`, status: res.status };
     }
-    if (status === 403) {
-      return { active: null, reason: "403 — protected/private", status };
+    const body = await res.text();
+
+    // Signal paling kuat untuk ACTIVE: profile_image_url_https (real user profile data)
+    // Active body always punya followers_count, profile_image, screen_name + verified, dll
+    // Suspended body cuma punya hasResults & entries (no user data sama sekali)
+    const hasProfileImage = body.includes('profile_image_url_https');
+    const hasFollowers = body.includes('"followers_count"');
+    const hasResultsFalse = body.includes('"hasResults":false');
+    const hasEntriesEmpty = body.includes('"entries":[]');
+
+    if (hasProfileImage || hasFollowers) {
+      return { active: true, reason: "Akun aktif (profile data ada)", status: 200 };
     }
-    return { active: null, reason: `HTTP ${status} — tidak pasti`, status };
+
+    if (hasResultsFalse && hasEntriesEmpty && body.length < 5000) {
+      return { active: false, reason: "Akun suspended/dihapus", status: 200 };
+    }
+    if (body.length < 3000) {
+      return { active: false, reason: "Akun suspended (no profile data)", status: 200 };
+    }
+
+    return { active: null, reason: "Tidak pasti (cek manual)", status: 200 };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes("timeout") || msg.includes("abort"))
@@ -214,38 +251,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "checks[] required" }, { status: 400 });
     }
 
-    // Limit per request: 30 (concurrent fetch)
-    const limited = checks.slice(0, 30);
+    // Limit per request: 15 (avoid Vercel timeout 60s + Twitter rate-limit 30/min)
+    const limited = checks.slice(0, 15);
 
-    // Concurrency: 5 parallel via batching
-    const CONCURRENCY = 5;
+    // Concurrency adaptif: Twitter pakai 2 parallel (rate-limit ketat),
+    // platform lain pakai 5 parallel (lebih lenient)
+    const twitterChecks = limited.filter((c) => c.platform === "X (Twitter)");
+    const otherChecks = limited.filter((c) => c.platform !== "X (Twitter)");
+
+    const runCheck = async (c: typeof limited[number]): Promise<{ id: number } & CheckResult> => {
+      if (!c.url && !c.username) {
+        return { id: c.id, active: null, reason: "URL/username kosong", status: 0 };
+      }
+      let username = c.username || "";
+      if (!username && c.url) {
+        const m = c.url.match(/\/@?([\w._-]+)\/?$/);
+        username = m?.[1] || "";
+      }
+      let r: CheckResult;
+      if (c.platform === "X (Twitter)") r = await checkTwitter(username);
+      else if (c.platform === "YouTube") r = await checkYoutube(username);
+      else if (c.platform === "TikTok") r = await checkTikTok(username);
+      else if (c.platform === "Telegram") r = await checkTelegram(username);
+      else if (c.platform === "Instagram") r = await checkInstagram(username);
+      else r = await checkGeneric(c.url, c.platform);
+      return { id: c.id, ...r };
+    };
+
     const results: Array<{ id: number } & CheckResult> = [];
 
-    for (let i = 0; i < limited.length; i += CONCURRENCY) {
-      const slice = limited.slice(i, i + CONCURRENCY);
-      const settled = await Promise.all(
-        slice.map(async (c) => {
-          if (!c.url && !c.username) {
-            return { id: c.id, active: null, reason: "URL/username kosong", status: 0 };
-          }
-          // Extract username dari url kalau ada (fallback)
-          let username = c.username || "";
-          if (!username && c.url) {
-            const m = c.url.match(/\/@?([\w._-]+)\/?$/);
-            username = m?.[1] || "";
-          }
+    // Twitter: 2 parallel max, dengan delay 200ms antar batch (untuk rate-limit ~30/min)
+    for (let i = 0; i < twitterChecks.length; i += 2) {
+      const slice = twitterChecks.slice(i, i + 2);
+      const settled = await Promise.all(slice.map(runCheck));
+      results.push(...settled);
+      if (i + 2 < twitterChecks.length) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
 
-          let r: CheckResult;
-          if (c.platform === "X (Twitter)") r = await checkTwitter(username);
-          else if (c.platform === "YouTube") r = await checkYoutube(username);
-          else if (c.platform === "TikTok") r = await checkTikTok(username);
-          else if (c.platform === "Telegram") r = await checkTelegram(username);
-          else if (c.platform === "Instagram") r = await checkInstagram(username);
-          else r = await checkGeneric(c.url, c.platform);
-
-          return { id: c.id, ...r };
-        })
-      );
+    // Platform lain: 5 parallel
+    for (let i = 0; i < otherChecks.length; i += 5) {
+      const slice = otherChecks.slice(i, i + 5);
+      const settled = await Promise.all(slice.map(runCheck));
       results.push(...settled);
     }
 
