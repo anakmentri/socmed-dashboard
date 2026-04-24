@@ -45,6 +45,7 @@ const emptyMember: TeamMember = {
   role: "Content Creator",
   color: "#38bdf8",
   platforms: [],
+  notes: "",
 };
 
 export default function TeamPage() {
@@ -197,6 +198,20 @@ export default function TeamPage() {
                 </div>
               </div>
 
+              {/* Catatan section */}
+              <div className="mt-3 rounded-lg border border-bg-700 bg-bg-900 p-2.5">
+                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                  📝 Catatan
+                </div>
+                <div className="text-xs leading-relaxed text-fg-300 whitespace-pre-wrap break-words">
+                  {m.notes && m.notes.trim() ? (
+                    m.notes
+                  ) : (
+                    <span className="italic text-fg-600">Belum ada catatan</span>
+                  )}
+                </div>
+              </div>
+
               {isAdmin && (
                 <div className="mt-3 flex gap-2 border-t border-bg-700 pt-3">
                   <button
@@ -325,6 +340,23 @@ export default function TeamPage() {
             ))}
           </div>
         </div>
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
+            📝 Catatan <span className="text-fg-500 normal-case">(opsional — info tambahan tentang anggota)</span>
+          </label>
+          <textarea
+            className={inputCls + " min-h-[80px] resize-y"}
+            placeholder="Contoh: Spesialis konten viral. Aktif jam kerja 09.00-17.00. Jago video editing FCP..."
+            value={modal.data.notes || ""}
+            onChange={(e) =>
+              setModal((m) => ({ ...m, data: { ...m.data, notes: e.target.value } }))
+            }
+          />
+          <div className="mt-1 text-[10px] text-fg-500">
+            {(modal.data.notes || "").length} karakter
+          </div>
+        </div>
+
         <div className="mb-4 rounded-lg border border-bg-700 bg-bg-900 p-3">
           <div className="mb-1 text-[10px] uppercase tracking-wider text-fg-500">Preview</div>
           <div className="flex items-center gap-3">

@@ -34,6 +34,7 @@ export type TeamMember = {
   role: string;
   color: string;
   platforms?: string[];
+  notes?: string;
 };
 
 // Also keep backward compat alias
@@ -63,13 +64,14 @@ export async function refreshMembersFromDb(): Promise<TeamMember[]> {
       .select("*")
       .order("id", { ascending: true });
     if (error || !data) return getAllMembers();
-    const members: TeamMember[] = data.map((m: { username: string; password: string; name: string; role: string; color: string; platforms?: string[] }) => ({
+    const members: TeamMember[] = data.map((m: { username: string; password: string; name: string; role: string; color: string; platforms?: string[]; notes?: string }) => ({
       username: m.username,
       password: m.password,
       name: m.name,
       role: m.role || "",
       color: m.color || "#38bdf8",
       platforms: m.platforms || [],
+      notes: m.notes || "",
     }));
     if (typeof window !== "undefined") {
       try {
@@ -84,16 +86,23 @@ export async function refreshMembersFromDb(): Promise<TeamMember[]> {
 
 /** Save a single member to Supabase (upsert). */
 export async function upsertMember(m: TeamMember) {
-  const payload = {
+  const payload: Record<string, unknown> = {
     username: m.username,
     password: m.password,
     name: m.name,
     role: m.role,
     color: m.color,
     platforms: m.platforms || [],
+    notes: m.notes || "",
     updated_at: new Date().toISOString(),
   };
-  await supabase.from("team_members").upsert(payload, { onConflict: "username" });
+  // Try with notes; fallback tanpa notes kalau kolom belum ada (DB belum di-ALTER)
+  let res = await supabase.from("team_members").upsert(payload, { onConflict: "username" });
+  if (res.error && /notes/i.test(res.error.message)) {
+    delete payload.notes;
+    res = await supabase.from("team_members").upsert(payload, { onConflict: "username" });
+  }
+  if (res.error) throw new Error(res.error.message);
 }
 
 /** Delete a member by username. */

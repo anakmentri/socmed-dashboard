@@ -99,7 +99,11 @@
       "Bash(npx supabase *)",
       "Read(//c/Users/user210/**)",
       "Read(//c/Users/user210/AppData/Roaming/**)",
-      "Bash(node migration/10-try-expose.js)"
+      "Bash(node migration/10-try-expose.js)",
+      "Bash(git reset *)",
+      "Bash(git rm *)",
+      "Bash(curl -s \"https://socmedanalytics.com/dashboard/autopost\")",
+      "Bash(curl -s \"https://socmedanalytics.com/_next/static/chunks/app/dashboard/autopost/page-fe4c6233e04da5cb.js\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
