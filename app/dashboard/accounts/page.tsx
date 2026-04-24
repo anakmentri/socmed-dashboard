@@ -316,32 +316,39 @@ export default function AccountsPage() {
     } catch {}
   };
 
+  const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
+
   const checkAccounts = async (accountsToCheck: SocAccount[]) => {
     if (accountsToCheck.length === 0) return;
     setChecking(true);
     const checks = accountsToCheck
-      .filter((a) => a.id)
+      .filter((a) => a.id && a.username)
       .map((a) => ({
         id: a.id!,
         url: profileUrl(a),
         platform: a.platform,
-      }))
-      .filter((c) => c.url);
+        username: a.username,
+      }));
 
     if (checks.length === 0) {
-      toast("Tidak ada URL profil valid", true);
+      toast("Tidak ada akun dengan username valid", true);
       setChecking(false);
       return;
     }
 
-    // Batch 20-an (limit API)
-    const chunks: typeof checks[] = [];
-    for (let i = 0; i < checks.length; i += 20) chunks.push(checks.slice(i, i + 20));
+    setCheckProgress({ done: 0, total: checks.length });
 
-    let total = 0;
+    // Batch 30 per request (sesuai server limit)
+    const BATCH = 30;
+    const chunks: typeof checks[] = [];
+    for (let i = 0; i < checks.length; i += BATCH) chunks.push(checks.slice(i, i + BATCH));
+
+    let totalChecked = 0;
     let suspended = 0;
+    let active = 0;
+    let unknown = 0;
     const nextResults = { ...checkResults };
-    const nextBanned = { ...banned };
+    const newlyBanned: number[] = [];
 
     for (const chunk of chunks) {
       try {
@@ -357,15 +364,21 @@ export default function AccountsPage() {
             reason: r.reason,
             at: new Date().toISOString(),
           };
-          total++;
-          // Auto-toggle banned kalau terdeteksi suspended
+          totalChecked++;
           if (r.active === false) {
-            nextBanned[r.id] = true;
+            // Confirmed suspended → mark banned
+            if (!banned[r.id]) newlyBanned.push(r.id);
             suspended++;
-          } else if (r.active === true && nextBanned[r.id]) {
-            // Kalau sebelumnya banned tapi sekarang aktif, tidak auto-unban (biar admin yang putuskan)
+          } else if (r.active === true) {
+            active++;
+          } else {
+            // Uncertain (null) → JANGAN auto-ban, biar admin manual cek
+            unknown++;
           }
         }
+        setCheckProgress({ done: totalChecked, total: checks.length });
+        // Update results incrementally so user sees progress
+        setCheckResults({ ...nextResults });
       } catch (e) {
         console.error(e);
       }
@@ -374,38 +387,30 @@ export default function AccountsPage() {
     setCheckResults(nextResults);
     saveCheckResults(nextResults);
 
-    // Sync banned status ke Supabase
-    for (const [id, isBanned] of Object.entries(nextBanned)) {
-      if (isBanned && !banned[Number(id)]) {
-        await supabase
-          .from("banned_accounts")
-          .upsert({ account_id: Number(id) })
-          .then(() => {});
-      }
+    // Sync newly-banned ke Supabase (batch)
+    if (newlyBanned.length > 0) {
+      const newBanned = { ...banned };
+      newlyBanned.forEach((id) => (newBanned[id] = true));
+      setBanned(newBanned);
+      await supabase
+        .from("banned_accounts")
+        .upsert(newlyBanned.map((id) => ({ account_id: id })))
+        .then(() => {});
     }
-    setBanned(nextBanned);
-
-    // Hitung status hasil
-    const unknown = Object.values(nextResults).filter(
-      (v) => v.active === null && new Date(v.at).getTime() > Date.now() - 60000
-    ).length;
 
     logAs(
       session,
       "Auto-Check Akun Sosmed",
       "Akun Sosmed",
-      `${total} dicek, ${suspended} suspended, ${unknown} tidak pasti`
+      `${totalChecked} dicek: ✅${active} aktif, ⚠${suspended} suspended, ❓${unknown} tidak pasti`
     );
     toast(
-      suspended > 0
-        ? `✅ ${total - suspended} aktif · ⚠ ${suspended} suspended${
-            unknown > 0 ? ` · ❓ ${unknown} tidak pasti` : ""
-          }`
-        : `✅ ${total} dicek — semua valid${
-            unknown > 0 ? `, ${unknown} tidak pasti (tidak di-banned)` : ""
-          }`
+      `✅ ${active} aktif · ⚠ ${suspended} suspended (auto-banned) · ❓ ${unknown} tidak pasti${
+        unknown > 0 ? " (cek manual)" : ""
+      }`
     );
     setChecking(false);
+    setCheckProgress(null);
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -481,10 +486,14 @@ export default function AccountsPage() {
             onClick={() => checkAccounts(rows)}
             disabled={checking}
             className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-brand-emerald hover:bg-emerald-500/20 disabled:opacity-50"
-            title="Cek semua akun via HTTP — deteksi otomatis yang suspended/hilang"
+            title="Cek semua akun: Twitter via oembed (100% reliable), platform lain via HTTP+body"
           >
             <span className={checking ? "animate-spin" : ""}>🔍</span>
-            {checking ? "Mengecek..." : "Cek Semua Akun"}
+            {checking
+              ? checkProgress
+                ? `Mengecek ${checkProgress.done}/${checkProgress.total}...`
+                : "Mengecek..."
+              : "Cek Semua Akun"}
           </button>
           <button
             onClick={exportAccounts}
@@ -1027,24 +1036,36 @@ export default function AccountsPage() {
 
                               {/* Status check result */}
                               {checkResults[r.id!] && (
-                                <div
-                                  className={`mt-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] ${
-                                    checkResults[r.id!].active === true
-                                      ? "bg-emerald-500/10 text-brand-emerald"
+                                <>
+                                  <div
+                                    className={`mt-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] ${
+                                      checkResults[r.id!].active === true
+                                        ? "bg-emerald-500/10 text-brand-emerald"
+                                        : checkResults[r.id!].active === false
+                                        ? "bg-red-500/10 text-brand-rose"
+                                        : "bg-bg-700 text-fg-500"
+                                    }`}
+                                    title={`${checkResults[r.id!].reason} · Dicek ${new Date(
+                                      checkResults[r.id!].at
+                                    ).toLocaleString("id-ID")}`}
+                                  >
+                                    {checkResults[r.id!].active === true
+                                      ? "✅ Terverifikasi Aktif"
                                       : checkResults[r.id!].active === false
-                                      ? "bg-red-500/10 text-brand-rose"
-                                      : "bg-bg-700 text-fg-500"
-                                  }`}
-                                  title={`${checkResults[r.id!].reason} · Dicek ${new Date(
-                                    checkResults[r.id!].at
-                                  ).toLocaleString("id-ID")}`}
-                                >
-                                  {checkResults[r.id!].active === true
-                                    ? "✅ Terverifikasi Aktif"
-                                    : checkResults[r.id!].active === false
-                                    ? "⚠ " + checkResults[r.id!].reason.slice(0, 30)
-                                    : "❓ Belum dicek"}
-                                </div>
+                                      ? "⚠ " + checkResults[r.id!].reason.slice(0, 40)
+                                      : "❓ Tidak pasti"}
+                                  </div>
+                                  {/* False-positive ban indicator: banned tapi check confirms active */}
+                                  {isBanned && checkResults[r.id!].active === true && (
+                                    <button
+                                      onClick={() => toggleBanned(r.id!)}
+                                      className="mt-1 flex w-full items-center justify-center gap-1 rounded bg-amber-500/10 border border-amber-500/40 px-1.5 py-1 text-[9px] font-bold text-brand-amber hover:bg-amber-500/20"
+                                      title="Akun ini ditandai banned tapi check konfirmasi aktif. Klik untuk un-ban."
+                                    >
+                                      🔓 Unban — terverifikasi aktif
+                                    </button>
+                                  )}
+                                </>
                               )}
 
                               {r.verify_link && (
