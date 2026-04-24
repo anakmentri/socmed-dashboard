@@ -5,7 +5,8 @@ import { PageShell } from "@/components/PageShell";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
-import { logAs } from "@/lib/utils";
+import { logAs, initials } from "@/lib/utils";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 
 type TwitterConn = {
   id: number;
@@ -51,6 +52,7 @@ function AutoPostInner() {
   const { session } = useSession();
   const { toast } = useToast();
   const sp = useSearchParams();
+  const { team } = useTeamMembers();
 
   const [tab, setTab] = useState<TabKey>("twitter");
   const [twConns, setTwConns] = useState<TwitterConn[]>([]);
@@ -592,6 +594,180 @@ function AutoPostInner() {
           💡 FB/IG/TikTok butuh setup Meta App terpisah
         </div>
       </div>
+
+      {/* Admin-only: Overview akun per anggota (Twitter + Telegram) */}
+      {!isMember && (twConns.length > 0 || tgConns.length > 0) && (
+        <div className="mb-5 rounded-xl border border-bg-700 bg-bg-800 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-fg-100">📱 Akun Sosmed per Anggota</h3>
+            <span className="text-[10px] text-fg-500">
+              {twConns.length} Twitter · {tgConns.length} Telegram total
+            </span>
+          </div>
+          {(() => {
+            // Group connections by owner_name
+            const byOwner: Record<
+              string,
+              { twitter: TwitterConn[]; telegram: TelegramConn[] }
+            > = {};
+            twConns.forEach((c) => {
+              byOwner[c.owner_name] = byOwner[c.owner_name] || { twitter: [], telegram: [] };
+              byOwner[c.owner_name].twitter.push(c);
+            });
+            tgConns.forEach((c) => {
+              byOwner[c.owner_name] = byOwner[c.owner_name] || { twitter: [], telegram: [] };
+              byOwner[c.owner_name].telegram.push(c);
+            });
+            const owners = Object.keys(byOwner).sort((a, b) => {
+              // Admin first, then alphabetic
+              if (a === "admin") return -1;
+              if (b === "admin") return 1;
+              return a.localeCompare(b);
+            });
+            if (owners.length === 0) {
+              return (
+                <div className="py-3 text-center text-xs text-fg-500">
+                  Belum ada anggota yang connect akun
+                </div>
+              );
+            }
+            const memberInfo = (name: string) => team.find((t) => t.name === name);
+            return (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {owners.map((name) => {
+                  const data = byOwner[name];
+                  const m = memberInfo(name);
+                  const color = m?.color || (name === "admin" ? "#38bdf8" : "#64748b");
+                  const isSelected = owner === name;
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => setOwner(name)}
+                      className={`group rounded-lg border p-2.5 text-left transition ${
+                        isSelected
+                          ? "border-brand-sky bg-brand-sky/5"
+                          : "border-bg-700 bg-bg-900 hover:border-bg-600"
+                      }`}
+                      title={`Klik untuk filter ke ${name}`}
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        <span
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold text-white"
+                          style={{ backgroundColor: color }}
+                        >
+                          {name === "admin" ? "A" : (m ? initials(name) : name[0]?.toUpperCase() || "?")}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate text-xs font-bold text-fg-100">{name}</div>
+                          <div className="truncate text-[10px] text-fg-500">
+                            {m?.role || (name === "admin" ? "Administrator" : "Anggota")}
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-brand-sky">✓</span>
+                        )}
+                      </div>
+
+                      {/* Twitter accounts */}
+                      {data.twitter.length > 0 && (
+                        <div className="mb-1.5">
+                          <div className="mb-1 flex items-center gap-1 text-[10px] text-fg-500">
+                            <span style={{ color: "#1DA1F2" }}>𝕏</span>
+                            <span className="font-semibold">
+                              Twitter ({data.twitter.length})
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {data.twitter.slice(0, 5).map((c) => (
+                              <span
+                                key={c.id}
+                                className="rounded bg-bg-700 px-1.5 py-0.5 text-[10px] text-fg-300"
+                              >
+                                @{c.twitter_username}
+                              </span>
+                            ))}
+                            {data.twitter.length > 5 && (
+                              <span className="text-[10px] text-fg-500">
+                                +{data.twitter.length - 5} lainnya
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Telegram channels */}
+                      {data.telegram.length > 0 && (
+                        <div>
+                          <div className="mb-1 flex items-center gap-1 text-[10px] text-fg-500">
+                            <span style={{ color: "#229ED9" }}>✈</span>
+                            <span className="font-semibold">
+                              Telegram ({data.telegram.length})
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {data.telegram.slice(0, 3).map((c) => (
+                              <span
+                                key={c.id}
+                                className="rounded bg-bg-700 px-1.5 py-0.5 text-[10px] text-fg-300"
+                              >
+                                {c.chat_title || c.chat_id}
+                              </span>
+                            ))}
+                            {data.telegram.length > 3 && (
+                              <span className="text-[10px] text-fg-500">
+                                +{data.telegram.length - 3} lainnya
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {data.twitter.length === 0 && data.telegram.length === 0 && (
+                        <div className="py-1 text-[10px] italic text-fg-600">
+                          Belum ada akun
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Anggota yang BELUM punya akun apapun (admin perlu tau) */}
+          {(() => {
+            const ownersWithAccounts = new Set([
+              ...twConns.map((c) => c.owner_name),
+              ...tgConns.map((c) => c.owner_name),
+            ]);
+            const membersWithoutAny = team.filter(
+              (t) => !ownersWithAccounts.has(t.name)
+            );
+            if (membersWithoutAny.length === 0) return null;
+            return (
+              <div className="mt-3 border-t border-bg-700 pt-3">
+                <div className="mb-1.5 text-[10px] text-fg-500">
+                  ⚠ Anggota belum connect akun ({membersWithoutAny.length}):
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {membersWithoutAny.map((m) => (
+                    <span
+                      key={m.username}
+                      className="flex items-center gap-1 rounded bg-bg-900 px-2 py-0.5 text-[10px] text-fg-400"
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: m.color }}
+                      />
+                      {m.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Connected Accounts Section */}
       <div className="mb-5">

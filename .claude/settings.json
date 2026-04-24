@@ -143,7 +143,10 @@
       "Bash(curl -s -o /tmp/sus3.html -w \"HTTP=%{http_code} SIZE=%{size_download}\\\\n\" -A \"Mozilla/5.0 \\(Windows NT 10.0\\)\" \"https://syndication.twitter.com/srv/timeline-profile/screen-name/RauchKrist19000\")",
       "Bash(curl -s -o /tmp/act3.html -w \"HTTP=%{http_code} SIZE=%{size_download}\\\\n\" -A \"Mozilla/5.0 \\(Windows NT 10.0\\)\" \"https://syndication.twitter.com/srv/timeline-profile/screen-name/x\")",
       "Bash(grep -oE '\"\\(user_id|screen_name|name|verified|followers_count|profile_image\\)[^\"]{0,30}' /tmp/act3.html)",
-      "Bash(grep -oE '\"\\(user_id|screen_name|name|verified|followers_count|profile_image|hasResults|entries\\)[^\"]{0,30}' /tmp/sus3.html)"
+      "Bash(grep -oE '\"\\(user_id|screen_name|name|verified|followers_count|profile_image|hasResults|entries\\)[^\"]{0,30}' /tmp/sus3.html)",
+      "Bash(curl -s -X POST \"https://socmedanalytics.com/api/check-account\" -H \"Content-Type: application/json\" -d '{\"checks\":[{\"id\":1,\"username\":\"RauchKrist19000\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/RauchKrist19000\"},{\"id\":2,\"username\":\"x\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/x\"}]}')",
+      "Bash(curl -s -X POST \"https://socmedanalytics.com/api/check-account\" -H \"Content-Type: application/json\" -d '{\"checks\":[{\"id\":1,\"username\":\"RauchKrist19000\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/RauchKrist19000\"}]}')",
+      "Bash(curl -s -X POST \"https://socmedanalytics.com/api/check-account\" -H \"Content-Type: application/json\" -d '{\"checks\":[{\"id\":1,\"username\":\"x\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/x\"},{\"id\":2,\"username\":\"thisaccountdoesntexist987654321\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/x\"}]}')"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
