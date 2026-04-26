@@ -6,6 +6,15 @@ const SESSION_KEY = "dashboard_session_v1";
 // Hardcoded credentials (mirror legacy dashboard)
 const ADMIN = { username: "admin", password: "admin123", role: "admin" as const };
 
+// Anggota tim yang punya akses setara admin (bisa lihat semua data anggota lain)
+// Login pakai username/password mereka sendiri, tapi role di session = "admin"
+// Match case-insensitive + trimmed
+const SUPER_VIEWER_NAMES = ["anomaly"];
+function isSuperViewer(name?: string): boolean {
+  if (!name) return false;
+  return SUPER_VIEWER_NAMES.includes(name.trim().toLowerCase());
+}
+
 const DEFAULT_MEMBERS: TeamMember[] = [
   { username: "tlegu", password: "tlegu123", name: "Tlegu", role: "Team Leader", color: "#38bdf8", platforms: ["Instagram", "X (Twitter)", "TikTok"] },
   { username: "rully", password: "rully123", name: "Rully", role: "Editor Video", color: "#ec4899", platforms: ["YouTube", "TikTok"] },
@@ -131,11 +140,25 @@ export async function tryLogin(username: string, password: string): Promise<Sess
       .eq("username", u)
       .eq("password", password)
       .maybeSingle();
-    if (data) return { username: data.username, role: "member", memberName: data.name };
+    if (data) {
+      const elevated = isSuperViewer(data.name);
+      return {
+        username: data.username,
+        role: elevated ? "admin" : "member",
+        memberName: data.name,
+      };
+    }
   } catch {}
   // Fallback to cached/default
   const m = getAllMembers().find((c) => c.username === u && c.password === password);
-  if (m) return { username: m.username, role: "member", memberName: m.name };
+  if (m) {
+    const elevated = isSuperViewer(m.name);
+    return {
+      username: m.username,
+      role: elevated ? "admin" : "member",
+      memberName: m.name,
+    };
+  }
   return null;
 }
 
