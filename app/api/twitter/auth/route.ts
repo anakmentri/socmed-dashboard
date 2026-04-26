@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("redirect_uri", callbackUrl);
   authUrl.searchParams.set(
     "scope",
-    "tweet.read tweet.write users.read offline.access"
+    // media.write WAJIB untuk upload gambar/video via /2/media/upload
+    "tweet.read tweet.write users.read media.write offline.access"
   );
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge", codeChallenge);

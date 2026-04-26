@@ -104,37 +104,82 @@ export async function POST(req: NextRequest) {
 
     const accessToken = await refreshTokenIfNeeded(conn);
 
-    // Upload media via v1.1 endpoint kalau ada image attachment (OAuth 2.0 tidak support media upload v1.1,
-    // jadi kita coba pakai v2 /2/media/upload yang baru — still beta, fallback text-only kalau gagal)
+    // Upload media via v2 endpoint (OAuth 2.0 user context).
+    // WAJIB scope 'media.write' — kalau akun belum re-auth setelah scope ditambah,
+    // bakal error 403 dan user perlu disconnect+reconnect Twitter.
     let mediaId: string | null = null;
+    let mediaError: string | null = null;
     if (media_base64) {
-      try {
-        const mimeMatch = media_base64.match(/^data:([^;]+);base64,(.+)$/);
-        if (mimeMatch) {
-          const [, , b64] = mimeMatch;
+      const mimeMatch = media_base64.match(/^data:([^;]+);base64,(.+)$/);
+      if (!mimeMatch) {
+        mediaError = "Format media tidak valid (bukan base64 data URI)";
+      } else {
+        try {
+          const [, mimeType, b64] = mimeMatch;
           const buf = Buffer.from(b64, "base64");
+          const isVideo = mimeType.startsWith("video");
+          const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
+          const fileName = isVideo ? `video.${ext}` : `photo.${ext}`;
+
           const form = new FormData();
+          // Twitter v2 media upload: butuh field 'media' dengan binary
           form.append(
             "media",
-            new Blob([new Uint8Array(buf)]),
-            mimeMatch[1].startsWith("video") ? "video.mp4" : "photo.jpg"
+            new Blob([new Uint8Array(buf)], { type: mimeType }),
+            fileName
           );
-          const upRes = await fetch("https://api.twitter.com/2/media/upload", {
+          // media_category membantu Twitter klasifikasikan asset
+          form.append("media_category", isVideo ? "tweet_video" : "tweet_image");
+
+          const upRes = await fetch("https://api.x.com/2/media/upload", {
             method: "POST",
             headers: { Authorization: `Bearer ${accessToken}` },
             body: form,
           });
-          const upJson = await upRes.json();
-          if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
-            mediaId = upJson.data?.id || upJson.media_id_string;
-          } else {
-            // Log error but continue with text-only
-            console.warn("Twitter media upload failed:", upJson);
+
+          let upJson: { data?: { id?: string; media_key?: string }; errors?: Array<{ message?: string; title?: string }>; title?: string; detail?: string; media_id_string?: string; reason?: string };
+          try {
+            upJson = await upRes.json();
+          } catch {
+            upJson = {};
           }
+
+          if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
+            mediaId = upJson.data?.id || upJson.media_id_string || null;
+          } else {
+            const errMsg =
+              upJson.errors?.[0]?.message ||
+              upJson.errors?.[0]?.title ||
+              upJson.title ||
+              upJson.detail ||
+              upJson.reason ||
+              `HTTP ${upRes.status}`;
+            mediaError = `Media upload gagal: ${errMsg}`;
+            // Hint kalau scope issue
+            if (upRes.status === 403 || /scope|permission|forbidden/i.test(errMsg)) {
+              mediaError +=
+                ". Akun Twitter perlu di-disconnect lalu Connect ulang (scope 'media.write' baru ditambah).";
+            }
+            // Hint kalau tier issue
+            if (upRes.status === 429 || /credit|quota|rate/i.test(errMsg)) {
+              mediaError +=
+                ". Cek subscription Twitter API kamu (Free tier tidak support media upload, butuh Basic+).";
+            }
+            console.warn("Twitter media upload failed:", upRes.status, upJson);
+          }
+        } catch (e) {
+          mediaError = e instanceof Error ? e.message : "Media upload error";
+          console.warn("Twitter media upload exception:", e);
         }
-      } catch (e) {
-        console.warn("Twitter media upload error:", e);
       }
+    }
+
+    // Kalau user upload media tapi gagal, return error (jangan post text-only diam-diam)
+    if (media_base64 && !mediaId) {
+      return NextResponse.json(
+        { error: mediaError || "Media upload gagal — alasan tidak diketahui" },
+        { status: 400 }
+      );
     }
 
     const tweetPayload: { text: string; media?: { media_ids: string[] } } = {
