@@ -62,6 +62,7 @@ function AutoPostInner() {
 
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
+  const [connSearch, setConnSearch] = useState("");
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [mediaBase64, setMediaBase64] = useState<string>(""); // legacy: 1 file (Twitter)
@@ -882,62 +883,167 @@ function AutoPostInner() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {tab === "twitter" &&
-              (availConns as TwitterConn[]).map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-3 rounded-xl border border-bg-700 bg-bg-800 p-4"
-                >
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-white"
-                    style={{ backgroundColor: currentPlatform.color }}
-                  >
-                    {currentPlatform.icon}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-fg-100">
-                      @{c.twitter_username || "unknown"}
-                    </div>
-                    <div className="text-[10px] uppercase tracking-wide text-fg-500">
-                      {c.owner_name}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => disconnectTw(c)}
-                    className="rounded bg-red-950/50 px-3 py-1 text-xs text-brand-rose"
-                  >
-                    Disconnect
-                  </button>
+          <>
+            {/* Search bar — selalu tampil kalau >5 akun untuk hindari scroll panjang */}
+            {availConns.length > 5 && (
+              <div className="mb-2 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-500">
+                    🔍
+                  </span>
+                  <input
+                    type="text"
+                    value={connSearch}
+                    onChange={(e) => setConnSearch(e.target.value)}
+                    placeholder={
+                      tab === "twitter"
+                        ? "Cari @username..."
+                        : "Cari channel/chat..."
+                    }
+                    className="w-full rounded-lg border border-bg-700 bg-bg-900 py-1.5 pl-9 pr-8 text-xs text-fg-100 outline-none focus:border-brand-sky"
+                  />
+                  {connSearch && (
+                    <button
+                      onClick={() => setConnSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-500 hover:text-fg-100"
+                      title="Bersihkan"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-              ))}
-            {tab === "telegram" &&
-              (availConns as TelegramConn[]).map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-3 rounded-xl border border-bg-700 bg-bg-800 p-4"
-                >
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-white"
-                    style={{ backgroundColor: currentPlatform.color }}
-                  >
-                    ✈
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-fg-100">{c.chat_title}</div>
-                    <div className="text-[10px] text-fg-500">
-                      {c.owner_name} · {c.chat_id}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => disconnectTg(c)}
-                    className="rounded bg-red-950/50 px-3 py-1 text-xs text-brand-rose"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ))}
-          </div>
+                {(() => {
+                  const q = connSearch.trim().toLowerCase();
+                  const filteredCount =
+                    tab === "twitter"
+                      ? (availConns as TwitterConn[]).filter(
+                          (c) =>
+                            !q ||
+                            (c.twitter_username || "").toLowerCase().includes(q) ||
+                            (c.owner_name || "").toLowerCase().includes(q)
+                        ).length
+                      : (availConns as TelegramConn[]).filter(
+                          (c) =>
+                            !q ||
+                            (c.chat_title || "").toLowerCase().includes(q) ||
+                            (c.chat_id || "").toLowerCase().includes(q) ||
+                            (c.owner_name || "").toLowerCase().includes(q)
+                        ).length;
+                  return (
+                    <span className="rounded bg-bg-900 border border-bg-700 px-2 py-1 text-[10px] text-fg-400">
+                      {connSearch ? `${filteredCount}/${availConns.length}` : availConns.length}
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Grid compact dengan internal scroll — page tidak ikut panjang */}
+            <div
+              className="overflow-y-auto rounded-lg border border-bg-700 bg-bg-900/40 p-2"
+              style={{ maxHeight: "50vh" }}
+            >
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {tab === "twitter" &&
+                  (availConns as TwitterConn[])
+                    .filter((c) => {
+                      const q = connSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (
+                        (c.twitter_username || "").toLowerCase().includes(q) ||
+                        (c.owner_name || "").toLowerCase().includes(q)
+                      );
+                    })
+                    .map((c) => (
+                      <div
+                        key={c.id}
+                        className={`group flex items-center gap-2 rounded-lg border p-2 transition ${
+                          selectedConnId === c.id
+                            ? "border-brand-sky bg-brand-sky/5"
+                            : "border-bg-700 bg-bg-800 hover:border-bg-600"
+                        }`}
+                      >
+                        <button
+                          onClick={() => setSelectedConnId(c.id)}
+                          className="flex flex-1 items-center gap-2 text-left min-w-0"
+                          title={`Pilih @${c.twitter_username}`}
+                        >
+                          <div
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                            style={{ backgroundColor: currentPlatform.color }}
+                          >
+                            𝕏
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-bold text-fg-100">
+                              @{c.twitter_username || "unknown"}
+                            </div>
+                            <div className="truncate text-[9px] uppercase tracking-wide text-fg-500">
+                              {c.owner_name}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => disconnectTw(c)}
+                          className="rounded bg-red-950/50 px-2 py-1 text-[10px] font-semibold text-brand-rose opacity-60 hover:opacity-100"
+                          title="Disconnect"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                {tab === "telegram" &&
+                  (availConns as TelegramConn[])
+                    .filter((c) => {
+                      const q = connSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (
+                        (c.chat_title || "").toLowerCase().includes(q) ||
+                        (c.chat_id || "").toLowerCase().includes(q) ||
+                        (c.owner_name || "").toLowerCase().includes(q)
+                      );
+                    })
+                    .map((c) => (
+                      <div
+                        key={c.id}
+                        className={`group flex items-center gap-2 rounded-lg border p-2 transition ${
+                          selectedConnId === c.id
+                            ? "border-brand-sky bg-brand-sky/5"
+                            : "border-bg-700 bg-bg-800 hover:border-bg-600"
+                        }`}
+                      >
+                        <button
+                          onClick={() => setSelectedConnId(c.id)}
+                          className="flex flex-1 items-center gap-2 text-left min-w-0"
+                          title={`Pilih ${c.chat_title}`}
+                        >
+                          <div
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-base text-white"
+                            style={{ backgroundColor: currentPlatform.color }}
+                          >
+                            ✈
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-bold text-fg-100">
+                              {c.chat_title}
+                            </div>
+                            <div className="truncate text-[9px] text-fg-500">
+                              {c.owner_name} · {c.chat_id}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => disconnectTg(c)}
+                          className="rounded bg-red-950/50 px-2 py-1 text-[10px] font-semibold text-brand-rose opacity-60 hover:opacity-100"
+                          title="Disconnect"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
