@@ -158,7 +158,11 @@
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/twitter_connections?select=id,owner_name,twitter_username\")",
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/banned_accounts?limit=3\")",
       "Bash(curl -s -w \"HTTP=%{http_code}\\\\n\" \"https://socmedanalytics.com/rest/v1/team_members\")",
-      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(24\\).toString\\('base64'\\)\\)\")"
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(24\\).toString\\('base64'\\)\\)\")",
+      "Bash(curl -s \"https://socmedanalytics.com/api/cron/recover-old-data?key=2Pq35meXPM59/IzZG9U5jiITObSA6hAS\")",
+      "Bash(curl -s -X POST https://socmedanalytics.com/rest/v1/activity_log -H 'apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph' -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{\"who\":\"TEST\",\"role\":\"Test\",\"action\":\"PG Proxy Test\",\"source\":\"Diagnostic\",\"detail\":\"Test insert via proxy\"}' -w '\\\\nHTTP=%{http_code}\\\\n')",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/activity_log?select=id,who,action&id=eq.106853\")",
+      "Bash(curl -sI \"https://socmedanalytics.com/dashboard/report\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
