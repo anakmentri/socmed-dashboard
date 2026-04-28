@@ -150,7 +150,14 @@
       "Bash(node migration/11-try-views.js)",
       "Bash(curl -s -X PATCH \"https://api.supabase.com/v1/projects/vhsridhwjbqypwummrtp/postgrest\" -H \"Content-Type: application/json\" -d '{\"db_schema\":\"public,datadomain,twitterdood\"}' -w \"\\\\nHTTP=%{http_code}\\\\n\")",
       "Bash(curl -s -X PATCH \"https://api.supabase.com/v1/projects/vhsridhwjbqypwummrtp/postgrest\" -H \"Authorization: Bearer sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" -H \"Content-Type: application/json\" -d '{\"db_schema\":\"public,datadomain,twitterdood\"}' -w \"\\\\nHTTP=%{http_code}\\\\n\")",
-      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=id,name,role&limit=3\")"
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=id,name,role&limit=3\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=id,name&limit=2\")",
+      "Bash(curl -s -I -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" -H \"Prefer: count=exact\" -H \"Range: 0-0\" \"https://socmedanalytics.com/rest/v1/team_members\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=id,name&name=eq.Tlegu\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/report_items?select=id,name,title&date=eq.2026-04-22&limit=3\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/twitter_connections?select=id,owner_name,twitter_username\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/banned_accounts?limit=3\")",
+      "Bash(curl -s -w \"HTTP=%{http_code}\\\\n\" \"https://socmedanalytics.com/rest/v1/team_members\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

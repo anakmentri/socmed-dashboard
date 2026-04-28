@@ -515,36 +515,34 @@ export default function AssetsPage() {
     const blob = new Blob([arr], { type: mime });
     const fileName = `${type}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
 
-    const { error: upErr } = await supabase.storage
-      .from("assets")
-      .upload(fileName, blob, { cacheControl: "31536000", upsert: false });
-    if (upErr) {
-      if (
-        upErr.message.toLowerCase().includes("bucket not found") ||
-        upErr.message.toLowerCase().includes("not_found")
-      ) {
-        console.warn("[storage] Bucket 'assets' belum ada, fallback ke base64");
+    // Setelah migrasi ke twitterdood (April 28), Supabase Storage tidak ke-proxy
+    // (cuma REST API yang di-proxy via /api/pgrest). Storage upload akan SELALU
+    // fail. Fallback langsung ke base64 — pattern yang sama dengan 246 assets
+    // existing yang sudah pakai base64 di field 'url'.
+    try {
+      const { error: upErr } = await supabase.storage
+        .from("assets")
+        .upload(fileName, blob, { cacheControl: "31536000", upsert: false });
+      if (upErr) {
+        console.warn("[storage] Upload fail, fallback ke base64:", upErr.message);
         return base64;
       }
-      throw new Error(`Storage upload: ${upErr.message}`);
+      // Coba public URL dulu (kalau bucket public)
+      const { data: pub } = supabase.storage.from("assets").getPublicUrl(fileName);
+      try {
+        const test = await fetch(pub.publicUrl, { method: "HEAD" });
+        if (test.ok) return pub.publicUrl;
+      } catch {}
+      // Private bucket → signed URL (1 tahun)
+      const { data: signed } = await supabase.storage
+        .from("assets")
+        .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+      if (signed?.signedUrl) return signed.signedUrl;
+      return base64;
+    } catch (e) {
+      console.warn("[storage] Exception, fallback ke base64:", e);
+      return base64;
     }
-
-    // Coba public URL dulu (kalau bucket public)
-    const { data: pub } = supabase.storage.from("assets").getPublicUrl(fileName);
-    // Verify public URL aktif
-    try {
-      const test = await fetch(pub.publicUrl, { method: "HEAD" });
-      if (test.ok) return pub.publicUrl;
-    } catch {}
-
-    // Bucket private → pakai signed URL (1 tahun expiry, max)
-    const { data: signed, error: sErr } = await supabase.storage
-      .from("assets")
-      .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year
-    if (sErr || !signed?.signedUrl) {
-      throw new Error(`Sign URL: ${sErr?.message || "no URL"}`);
-    }
-    return signed.signedUrl;
   };
 
   // Migration tool — pindahkan base64 lama ke Storage
