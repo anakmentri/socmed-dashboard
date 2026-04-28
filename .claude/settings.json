@@ -157,7 +157,8 @@
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/report_items?select=id,name,title&date=eq.2026-04-22&limit=3\")",
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/twitter_connections?select=id,owner_name,twitter_username\")",
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/banned_accounts?limit=3\")",
-      "Bash(curl -s -w \"HTTP=%{http_code}\\\\n\" \"https://socmedanalytics.com/rest/v1/team_members\")"
+      "Bash(curl -s -w \"HTTP=%{http_code}\\\\n\" \"https://socmedanalytics.com/rest/v1/team_members\")",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(24\\).toString\\('base64'\\)\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
