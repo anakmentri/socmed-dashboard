@@ -149,7 +149,8 @@
       "Bash(curl -s -X POST \"https://socmedanalytics.com/api/check-account\" -H \"Content-Type: application/json\" -d '{\"checks\":[{\"id\":1,\"username\":\"x\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/x\"},{\"id\":2,\"username\":\"thisaccountdoesntexist987654321\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/x\"}]}')",
       "Bash(node migration/11-try-views.js)",
       "Bash(curl -s -X PATCH \"https://api.supabase.com/v1/projects/vhsridhwjbqypwummrtp/postgrest\" -H \"Content-Type: application/json\" -d '{\"db_schema\":\"public,datadomain,twitterdood\"}' -w \"\\\\nHTTP=%{http_code}\\\\n\")",
-      "Bash(curl -s -X PATCH \"https://api.supabase.com/v1/projects/vhsridhwjbqypwummrtp/postgrest\" -H \"Authorization: Bearer sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" -H \"Content-Type: application/json\" -d '{\"db_schema\":\"public,datadomain,twitterdood\"}' -w \"\\\\nHTTP=%{http_code}\\\\n\")"
+      "Bash(curl -s -X PATCH \"https://api.supabase.com/v1/projects/vhsridhwjbqypwummrtp/postgrest\" -H \"Authorization: Bearer sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" -H \"Content-Type: application/json\" -d '{\"db_schema\":\"public,datadomain,twitterdood\"}' -w \"\\\\nHTTP=%{http_code}\\\\n\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=id,name,role&limit=3\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
