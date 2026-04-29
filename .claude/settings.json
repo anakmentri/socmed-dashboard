@@ -170,7 +170,8 @@
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/assets?select=id,name,type,uploaded_by&order=created_at.desc&limit=5\")",
       "Bash(node migration/14-recheck-banned.js)",
       "Bash(curl -s -X POST https://socmedanalytics.com/api/check-account -H 'Content-Type: application/json' -d '{\"checks\":[{\"id\":1,\"username\":\"SusanStark68954\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/SusanStark68954\"},{\"id\":2,\"username\":\"Lucasfloyd35608\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/Lucasfloyd35608\"}]}')",
-      "Bash(grep -n \"Compose\\\\|availConns.length > 1\\\\|@\\\\${\\(c as TwitterConn\\)\" app/dashboard/autopost/page.tsx)"
+      "Bash(grep -n \"Compose\\\\|availConns.length > 1\\\\|@\\\\${\\(c as TwitterConn\\)\" app/dashboard/autopost/page.tsx)",
+      "Bash(curl -s \"https://socmedanalytics.com/api/cron/auto-post?key=2Pq35meXPM59/IzZG9U5jiITObSA6hAS\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

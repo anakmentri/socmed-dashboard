@@ -55,6 +55,10 @@ export default function SchedulerPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState<"schedules" | "library" | "logs">("schedules");
 
+  const isAdmin = session?.role === "admin";
+  const isMember = session?.role === "member";
+  const myName = session?.memberName || (isAdmin ? "admin" : "");
+
   const [library, setLibrary] = useState<ContentItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -62,14 +66,28 @@ export default function SchedulerPage() {
 
   const load = async () => {
     setLoading(true);
+    // Anggota: filter schedules by owner_name = myName
+    // Admin: lihat semua
+    let schQuery = supabase.from("post_schedules").select("*").order("hour_utc");
+    if (isMember && myName) schQuery = schQuery.eq("owner_name", myName);
+
     const [lib, sch, rn] = await Promise.all([
       supabase.from("content_library").select("*").order("created_at", { ascending: false }),
-      supabase.from("post_schedules").select("*").order("hour_utc"),
+      schQuery,
       supabase.from("scheduled_runs").select("*").order("ran_at", { ascending: false }).limit(50),
     ]);
     setLibrary((lib.data as ContentItem[]) || []);
-    setSchedules((sch.data as Schedule[]) || []);
-    setRuns((rn.data as Run[]) || []);
+    let schedulesData = (sch.data as Schedule[]) || [];
+    let runsData = (rn.data as Run[]) || [];
+    // Filter logs to schedules anggota saja
+    if (isMember && myName) {
+      const myScheduleIds = new Set(schedulesData.map((s) => s.id));
+      runsData = runsData.filter(
+        (r) => !r.schedule_id || myScheduleIds.has(r.schedule_id)
+      );
+    }
+    setSchedules(schedulesData);
+    setRuns(runsData);
     setLoading(false);
   };
 
@@ -152,7 +170,7 @@ export default function SchedulerPage() {
         {
           name: "",
           platform: "twitter",
-          owner_name: "admin",
+          owner_name: isMember ? myName : "admin",
           target_group: "Post 1",
           hour_utc: 9,
           minute: 0,
@@ -237,7 +255,14 @@ export default function SchedulerPage() {
   };
 
   return (
-    <PageShell title="Auto Post Scheduler" desc="Schedule posts otomatis ke Post 1/2/3/Short">
+    <PageShell
+      title="Auto Post Scheduler"
+      desc={
+        isMember
+          ? `Schedule auto-post untuk akun ${myName} — fire ke Post 1/2/3/Short otomatis`
+          : "Schedule auto-post untuk semua anggota — fire ke Post 1/2/3/Short otomatis"
+      }
+    >
       {/* Tabs */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded-lg border border-bg-700 bg-bg-800 p-1">
@@ -646,7 +671,8 @@ export default function SchedulerPage() {
           <Field label="Owner (anggota mana akun-akunnya)">
             <select
               className={inputCls}
-              value={schModal.data.owner_name || "admin"}
+              value={schModal.data.owner_name || (isMember ? myName : "admin")}
+              disabled={isMember}
               onChange={(e) =>
                 setSchModal((m) => ({
                   ...m,
@@ -661,6 +687,11 @@ export default function SchedulerPage() {
                 </option>
               ))}
             </select>
+            {isMember && (
+              <div className="mt-1 text-[10px] text-fg-500">
+                Schedule akan jalan untuk akun kamu sendiri
+              </div>
+            )}
           </Field>
           <Field label="Target Group">
             <select
