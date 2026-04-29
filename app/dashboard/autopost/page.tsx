@@ -24,6 +24,7 @@ type SocialPost = {
   id: number;
   platform: string;
   posted_by: string;
+  target_owner: string | null;
   content: string;
   media_type: string | null;
   status: string;
@@ -33,6 +34,7 @@ type SocialPost = {
 };
 type TwitterPost = {
   id: number;
+  connection_id: number | null;
   tweet_id: string;
   text_content: string;
   status: string;
@@ -1524,6 +1526,37 @@ function AutoPostInner() {
                 "text_content" in p
                   ? (p as TwitterPost).text_content
                   : (p as SocialPost).content;
+
+              // Build link to actual post on platform
+              let postUrl: string | null = null;
+              let accountLabel: string | null = null;
+              if (tab === "twitter" && "tweet_id" in p && p.tweet_id) {
+                const tw = p as TwitterPost;
+                // Lookup username dari twConns via connection_id
+                const conn = twConns.find((c) => c.id === tw.connection_id);
+                const username = conn?.twitter_username || "i";
+                postUrl = `https://x.com/${username}/status/${tw.tweet_id}`;
+                if (conn) accountLabel = `@${conn.twitter_username}`;
+              } else if (tab === "telegram" && "external_id" in p && p.external_id) {
+                const sp = p as SocialPost;
+                // Telegram: t.me/c/{chat_id_no_minus}/{message_id} — works untuk private groups
+                // Atau t.me/{username}/{message_id} — untuk public channels
+                // Lookup chat info dari tgConns
+                const conn = tgConns.find((tg) => tg.owner_name === (sp.target_owner || "") || tg.chat_title === sp.target_owner);
+                if (conn) {
+                  accountLabel = conn.chat_title;
+                  // Convert -100xxxx → xxxx untuk t.me/c/ link (private group)
+                  const chatId = conn.chat_id.startsWith("-100")
+                    ? conn.chat_id.slice(4)
+                    : conn.chat_id.startsWith("@")
+                    ? conn.chat_id.slice(1)
+                    : conn.chat_id;
+                  postUrl = chatId.match(/^\d+$/)
+                    ? `https://t.me/c/${chatId}/${sp.external_id}`
+                    : `https://t.me/${chatId}/${sp.external_id}`;
+                }
+              }
+
               return (
                 <div
                   key={p.id}
@@ -1533,7 +1566,7 @@ function AutoPostInner() {
                       : "border-bg-700 bg-bg-800"
                   }`}
                 >
-                  <div className="mb-1 flex items-center gap-2">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-[10px] font-bold ${
                         isError
@@ -1549,13 +1582,32 @@ function AutoPostInner() {
                     {p.posted_by && (
                       <span className="text-[10px] text-fg-400">· {p.posted_by}</span>
                     )}
+                    {accountLabel && (
+                      <span className="text-[10px] text-fg-400">→ {accountLabel}</span>
+                    )}
                     {"media_type" in p && p.media_type && (
                       <span className="text-[10px] text-brand-sky">
                         · {p.media_type === "video" ? "🎬" : "🖼"} {p.media_type}
                       </span>
                     )}
+                    {postUrl && !isError && (
+                      <a
+                        href={postUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-auto rounded bg-brand-sky/10 px-2 py-0.5 text-[10px] font-bold text-brand-sky hover:bg-brand-sky/20"
+                        title="Buka post di Twitter"
+                      >
+                        🔗 Lihat di {tab === "twitter" ? "X" : "Telegram"}
+                      </a>
+                    )}
                   </div>
                   <div className="text-sm text-fg-200 whitespace-pre-wrap">{content}</div>
+                  {postUrl && !isError && (
+                    <div className="mt-2 truncate font-mono text-[10px] text-brand-sky">
+                      {postUrl}
+                    </div>
+                  )}
                   {isError && "error" in p && p.error && (
                     <div className="mt-1 text-[10px] text-brand-rose">{p.error}</div>
                   )}
