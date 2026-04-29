@@ -1071,24 +1071,40 @@ function AutoPostInner() {
 
         {availConns.length > 1 && (
           <div className="mb-3 flex flex-wrap gap-2">
-            {availConns.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedConnId(c.id)}
-                className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
-                  selectedConnId === c.id
-                    ? "border-current"
-                    : "border-bg-700 bg-bg-900 text-fg-400"
-                }`}
-                style={{
-                  color: selectedConnId === c.id ? currentPlatform.color : undefined,
-                }}
-              >
-                {tab === "twitter"
+            {availConns.map((c, idx) => {
+              // Label: Post 1, Post 2, ..., Post N-1, Post Short (untuk akun terakhir)
+              const isLast = idx === availConns.length - 1 && availConns.length > 3;
+              const postLabel = isLast ? "Post Short" : `Post ${idx + 1}`;
+              const subLabel =
+                tab === "twitter"
                   ? `@${(c as TwitterConn).twitter_username}`
-                  : (c as TelegramConn).chat_title}
-              </button>
-            ))}
+                  : (c as TelegramConn).chat_title;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedConnId(c.id)}
+                  className={`flex flex-col items-start rounded-lg border px-2.5 py-1.5 text-left transition ${
+                    selectedConnId === c.id
+                      ? "border-current"
+                      : "border-bg-700 bg-bg-900 text-fg-400 hover:border-bg-600"
+                  }`}
+                  style={{
+                    color: selectedConnId === c.id ? currentPlatform.color : undefined,
+                  }}
+                  title={subLabel}
+                >
+                  <span className={`flex items-center gap-1 text-[11px] font-bold ${
+                    isLast ? "text-brand-amber" : ""
+                  }`}>
+                    {isLast && <span>⚡</span>}
+                    {postLabel}
+                  </span>
+                  <span className="truncate max-w-[160px] text-[9px] font-normal opacity-60">
+                    {subLabel}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
 
