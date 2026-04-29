@@ -162,7 +162,14 @@
       "Bash(curl -s \"https://socmedanalytics.com/api/cron/recover-old-data?key=2Pq35meXPM59/IzZG9U5jiITObSA6hAS\")",
       "Bash(curl -s -X POST https://socmedanalytics.com/rest/v1/activity_log -H 'apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph' -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{\"who\":\"TEST\",\"role\":\"Test\",\"action\":\"PG Proxy Test\",\"source\":\"Diagnostic\",\"detail\":\"Test insert via proxy\"}' -w '\\\\nHTTP=%{http_code}\\\\n')",
       "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/activity_log?select=id,who,action&id=eq.106853\")",
-      "Bash(curl -sI \"https://socmedanalytics.com/dashboard/report\")"
+      "Bash(curl -sI \"https://socmedanalytics.com/dashboard/report\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/team_members?select=name,role\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/activity_log?select=created_at,who,action&order=created_at.desc&limit=3\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/report_items?select=id,name,title&date=eq.2026-04-28\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/attendance?date=eq.2026-04-28\")",
+      "Bash(curl -s -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" \"https://socmedanalytics.com/rest/v1/assets?select=id,name,type,uploaded_by&order=created_at.desc&limit=5\")",
+      "Bash(node migration/14-recheck-banned.js)",
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/check-account -H 'Content-Type: application/json' -d '{\"checks\":[{\"id\":1,\"username\":\"SusanStark68954\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/SusanStark68954\"},{\"id\":2,\"username\":\"Lucasfloyd35608\",\"platform\":\"X \\(Twitter\\)\",\"url\":\"https://x.com/Lucasfloyd35608\"}]}')"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

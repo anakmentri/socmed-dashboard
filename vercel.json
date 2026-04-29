@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/recover-old-data",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/recheck-banned",
+      "schedule": "0 3 * * *"
     }
   ]
 }
