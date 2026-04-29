@@ -63,6 +63,17 @@ function AutoPostInner() {
   const [text, setText] = useState("");
   const [owner, setOwner] = useState("admin");
   const [connSearch, setConnSearch] = useState("");
+
+  // Bulk post state
+  const [bulkPosting, setBulkPosting] = useState<{
+    group: string;
+    done: number;
+    total: number;
+    success: number;
+    failed: number;
+    currentAccount: string;
+    errors: string[];
+  } | null>(null);
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [mediaBase64, setMediaBase64] = useState<string>(""); // legacy: 1 file (Twitter)
@@ -540,6 +551,158 @@ function AutoPostInner() {
     } finally {
       setPosting(false);
     }
+  };
+
+  // ============ BULK POST ============
+  // Group available connections menjadi 4 bucket: Post 1 (45), Post 2 (45), Post 3 (45), Short (15)
+  type PostGroup = { name: string; size: number; accounts: (TwitterConn | TelegramConn)[] };
+  const buildGroups = (conns: (TwitterConn | TelegramConn)[]): PostGroup[] => {
+    const groups: PostGroup[] = [
+      { name: "Post 1", size: 45, accounts: [] },
+      { name: "Post 2", size: 45, accounts: [] },
+      { name: "Post 3", size: 45, accounts: [] },
+      { name: "Post Short", size: 15, accounts: [] },
+    ];
+    let idx = 0;
+    for (const g of groups) {
+      g.accounts = conns.slice(idx, idx + g.size);
+      idx += g.size;
+    }
+    return groups;
+  };
+
+  // Fire bulk post: post text/media yang sudah di-compose ke semua akun di grup,
+  // sequential dengan delay untuk hindari rate limit.
+  const bulkPost = async (group: PostGroup) => {
+    const hasMedia = mediaBase64 || mediaList.length > 0;
+    if (!text.trim() && !hasMedia) return toast("Text atau media wajib", true);
+    if (group.accounts.length === 0)
+      return toast(`${group.name} belum ada akun terhubung`, true);
+    if (
+      !confirm(
+        `Yakin kirim ke ${group.accounts.length} akun di "${group.name}"?\nTeks akan di-post ke semua akun secara berurutan.`
+      )
+    )
+      return;
+
+    setBulkPosting({
+      group: group.name,
+      done: 0,
+      total: group.accounts.length,
+      success: 0,
+      failed: 0,
+      currentAccount: "",
+      errors: [],
+    });
+
+    let done = 0,
+      success = 0,
+      failed = 0;
+    const errors: string[] = [];
+
+    for (const conn of group.accounts) {
+      const username =
+        tab === "twitter"
+          ? `@${(conn as TwitterConn).twitter_username}`
+          : (conn as TelegramConn).chat_title;
+
+      setBulkPosting((p) =>
+        p ? { ...p, currentAccount: username, done } : null
+      );
+
+      try {
+        if (tab === "twitter") {
+          const res = await fetch("/api/twitter/tweet", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              owner: (conn as TwitterConn).owner_name,
+              posted_by: myName,
+              connection_id: conn.id,
+              media_base64: mediaBase64 || undefined,
+            }),
+          });
+          const j = await res.json();
+          if (res.ok) success++;
+          else {
+            failed++;
+            errors.push(`${username}: ${j.error || "error"}`);
+          }
+        } else {
+          // Telegram
+          const tgConn = conn as TelegramConn;
+          const totalSize =
+            mediaList.reduce((s, m) => s + m.base64.length * 0.75, 0) +
+            (mediaBase64 ? mediaBase64.length * 0.75 : 0);
+          const useDirectUpload = totalSize > 3 * 1024 * 1024;
+          let result: { ok: boolean; error?: string };
+          if (useDirectUpload) {
+            const r = await sendDirectToTelegram(
+              tgConn,
+              text,
+              mediaList,
+              mediaBase64,
+              mediaType
+            );
+            result = { ok: r.ok, error: r.error };
+          } else {
+            const res = await fetch("/api/telegram/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                connection_id: tgConn.id,
+                text,
+                media_list: mediaList.length > 0 ? mediaList : undefined,
+                media_base64:
+                  mediaList.length === 0 && mediaBase64 ? mediaBase64 : undefined,
+                media_type: mediaList.length === 0 ? mediaType : undefined,
+                posted_by: myName,
+              }),
+            });
+            const j = await res.json().catch(() => ({}));
+            result = { ok: res.ok, error: j.error };
+          }
+          if (result.ok) success++;
+          else {
+            failed++;
+            errors.push(`${username}: ${result.error || "error"}`);
+          }
+        }
+      } catch (e) {
+        failed++;
+        errors.push(`${username}: ${e instanceof Error ? e.message : "exception"}`);
+      }
+
+      done++;
+      setBulkPosting((p) =>
+        p ? { ...p, done, success, failed, errors } : null
+      );
+
+      // Delay antar request — hindari rate limit
+      // Twitter Basic: 100/24h per akun, 200/15min per app
+      // Telegram: 30 msg/sec ke channel berbeda
+      await new Promise((r) => setTimeout(r, tab === "twitter" ? 800 : 200));
+    }
+
+    logAs(
+      session,
+      `Bulk Post ${group.name}`,
+      "Auto Post",
+      `${success}/${group.accounts.length} sukses · ${failed} gagal`
+    );
+    toast(
+      failed === 0
+        ? `✅ ${group.name}: ${success} akun sukses`
+        : `⚠ ${group.name}: ${success} sukses, ${failed} gagal`
+    );
+
+    if (success > 0) {
+      setText("");
+      clearMedia();
+      load();
+    }
+    // Keep bulkPosting state visible so user can review errors before close
   };
 
   const availConns =
@@ -1069,42 +1232,143 @@ function AutoPostInner() {
           )}
         </div>
 
+        {/* Bulk Post Groups: Post 1 (45) · Post 2 (45) · Post 3 (45) · Short (15) */}
+        {availConns.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+                📢 Bulk Post — kirim sekaligus ke banyak akun
+              </span>
+              <span className="text-[10px] text-fg-500">
+                {availConns.length} akun terhubung
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {buildGroups(availConns).map((g) => {
+                const filled = g.accounts.length;
+                const isShort = g.name === "Post Short";
+                const disabled = filled === 0 || posting || !!bulkPosting;
+                return (
+                  <button
+                    key={g.name}
+                    onClick={() => bulkPost(g)}
+                    disabled={disabled}
+                    className={`flex flex-col items-center justify-center rounded-lg border-2 px-3 py-3 transition ${
+                      disabled
+                        ? "border-bg-700 bg-bg-900 text-fg-600 opacity-50 cursor-not-allowed"
+                        : isShort
+                        ? "border-amber-500/40 bg-amber-500/5 text-brand-amber hover:bg-amber-500/15"
+                        : "border-bg-700 bg-bg-800 text-fg-200 hover:border-current hover:text-fg-100"
+                    }`}
+                    style={{
+                      color: !disabled && !isShort ? currentPlatform.color : undefined,
+                    }}
+                    title={
+                      filled > 0
+                        ? `Kirim ke ${filled} akun di ${g.name}`
+                        : `${g.name} belum ada akun terhubung (slot 0/${g.size})`
+                    }
+                  >
+                    <span className="text-sm font-bold">
+                      {isShort && "⚡ "}
+                      {g.name}
+                    </span>
+                    <span className="text-[10px] opacity-80">
+                      {filled}/{g.size} akun
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Bulk progress modal */}
+        {bulkPosting && (
+          <div className="mb-3 rounded-lg border-2 border-brand-sky bg-brand-sky/5 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {bulkPosting.done < bulkPosting.total && (
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-sky border-t-transparent" />
+                )}
+                <span className="text-sm font-bold text-brand-sky">
+                  {bulkPosting.group}: {bulkPosting.done}/{bulkPosting.total}
+                </span>
+              </div>
+              {bulkPosting.done === bulkPosting.total && (
+                <button
+                  onClick={() => setBulkPosting(null)}
+                  className="rounded bg-bg-700 px-2 py-0.5 text-[10px] hover:bg-bg-600"
+                >
+                  ✕ Tutup
+                </button>
+              )}
+            </div>
+
+            <div className="mb-2 h-2 overflow-hidden rounded-full bg-bg-700">
+              <div
+                className="h-full bg-brand-sky transition-all"
+                style={{
+                  width: `${(bulkPosting.done / bulkPosting.total) * 100}%`,
+                }}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-3 text-xs">
+              <span className="text-brand-emerald">✅ {bulkPosting.success} sukses</span>
+              {bulkPosting.failed > 0 && (
+                <span className="text-brand-rose">❌ {bulkPosting.failed} gagal</span>
+              )}
+              {bulkPosting.currentAccount && bulkPosting.done < bulkPosting.total && (
+                <span className="text-fg-400">
+                  → {bulkPosting.currentAccount}
+                </span>
+              )}
+            </div>
+
+            {bulkPosting.errors.length > 0 && bulkPosting.done === bulkPosting.total && (
+              <details className="mt-2 text-[11px]">
+                <summary className="cursor-pointer text-brand-rose">
+                  Lihat {bulkPosting.errors.length} error
+                </summary>
+                <div className="mt-1 max-h-32 overflow-y-auto rounded bg-bg-900 p-2 font-mono text-[10px] text-fg-400">
+                  {bulkPosting.errors.map((e, i) => (
+                    <div key={i} className="truncate">
+                      {e}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* Single account select (untuk single post — backup mode) */}
         {availConns.length > 1 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {availConns.map((c, idx) => {
-              // Label: Post 1, Post 2, ..., Post N-1, Post Short (untuk akun terakhir)
-              const isLast = idx === availConns.length - 1 && availConns.length > 3;
-              const postLabel = isLast ? "Post Short" : `Post ${idx + 1}`;
-              const subLabel =
-                tab === "twitter"
-                  ? `@${(c as TwitterConn).twitter_username}`
-                  : (c as TelegramConn).chat_title;
-              return (
+          <div className="mb-3">
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-500">
+              Atau pilih satu akun untuk single post:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {availConns.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelectedConnId(c.id)}
-                  className={`flex flex-col items-start rounded-lg border px-2.5 py-1.5 text-left transition ${
+                  className={`rounded-md border px-2 py-1 text-[10px] transition ${
                     selectedConnId === c.id
                       ? "border-current"
-                      : "border-bg-700 bg-bg-900 text-fg-400 hover:border-bg-600"
+                      : "border-bg-700 bg-bg-900 text-fg-500"
                   }`}
                   style={{
                     color: selectedConnId === c.id ? currentPlatform.color : undefined,
                   }}
-                  title={subLabel}
                 >
-                  <span className={`flex items-center gap-1 text-[11px] font-bold ${
-                    isLast ? "text-brand-amber" : ""
-                  }`}>
-                    {isLast && <span>⚡</span>}
-                    {postLabel}
-                  </span>
-                  <span className="truncate max-w-[160px] text-[9px] font-normal opacity-60">
-                    {subLabel}
-                  </span>
+                  {tab === "twitter"
+                    ? `@${(c as TwitterConn).twitter_username}`
+                    : (c as TelegramConn).chat_title}
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
         )}
 
