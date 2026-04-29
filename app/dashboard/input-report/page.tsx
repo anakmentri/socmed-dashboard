@@ -7,9 +7,10 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 import { supabase } from "@/lib/supabase";
 import { IrData } from "@/lib/types";
-import { today, fN, fmtIdDate, logAs } from "@/lib/utils";
+import { today, fN, fmtIdDate, logAs, getWeekRange, shiftDate, dayName } from "@/lib/utils";
 import { useCachedData } from "@/hooks/useCachedData";
 import { invalidateCache } from "@/lib/cache";
+import { useTeamMembers } from "@/hooks/useTeamMembers";
 
 const emptyIr: IrData = {
   date: today(),
@@ -32,7 +33,9 @@ const emptyIr: IrData = {
 export default function InputReportPage() {
   const { session } = useSession();
   const { toast } = useToast();
+  const { team } = useTeamMembers();
   const [date, setDate] = useState(today());
+  const [viewMode, setViewMode] = useState<"daily" | "weekly">("weekly");
   const [modal, setModal] = useState<{ open: boolean; idx: number; data: IrData }>({
     open: false,
     idx: -1,
@@ -41,17 +44,50 @@ export default function InputReportPage() {
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";
 
-  const cacheKey = `ir_data_${date}_${isMember ? myName : "all"}`;
+  // Week range untuk mode weekly
+  const week = getWeekRange(date);
+
+  const cacheKey =
+    viewMode === "daily"
+      ? `ir_data_d_${date}_${isMember ? myName : "all"}`
+      : `ir_data_w_${week.start}_${week.end}_${isMember ? myName : "all"}`;
+
   const { data: rowsCached, refresh, loading, isStale } = useCachedData<IrData[]>({
     key: cacheKey,
     fetcher: async () => {
-      let q = supabase.from("ir_data").select("*").eq("date", date);
+      let q = supabase.from("ir_data").select("*");
+      if (viewMode === "daily") {
+        q = q.eq("date", date);
+      } else {
+        q = q.gte("date", week.start).lte("date", week.end);
+      }
       if (isMember) q = q.eq("anggota", myName);
       const { data } = await q;
       return (data as IrData[]) || [];
     },
   });
   const rows: IrData[] = rowsCached || [];
+
+  // Aggregate per anggota untuk mingguan
+  const weeklyAgg = (() => {
+    const byMember: Record<
+      string,
+      { uploads: number; views: number; entries: number; platforms: Set<string> }
+    > = {};
+    rows.forEach((r) => {
+      const k = r.anggota || "(unknown)";
+      if (!byMember[k]) {
+        byMember[k] = { uploads: 0, views: 0, entries: 0, platforms: new Set() };
+      }
+      byMember[k].uploads += r.realisasi || 0;
+      byMember[k].views += r.output || 0;
+      byMember[k].entries += 1;
+      if (r.sosmed) byMember[k].platforms.add(r.sosmed);
+    });
+    return Object.entries(byMember)
+      .map(([anggota, v]) => ({ anggota, ...v, platforms: Array.from(v.platforms) }))
+      .sort((a, b) => b.uploads - a.uploads);
+  })();
 
   const load = async () => {
     invalidateCache(cacheKey);
@@ -98,12 +134,126 @@ export default function InputReportPage() {
   };
 
   return (
-    <PageShell title="Input Report" desc="Data realisasi & output per anggota tim">
-      <DateNav value={date} onChange={setDate} />
+    <PageShell title="Input Report" desc="Data realisasi & output — agregat mingguan per anggota">
+      {/* Mode toggle: Mingguan / Harian */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 rounded-lg border border-bg-700 bg-bg-800 p-1">
+          {(["weekly", "daily"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setViewMode(m)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                viewMode === m
+                  ? "bg-brand-sky text-bg-900"
+                  : "text-fg-400 hover:bg-bg-700 hover:text-fg-100"
+              }`}
+            >
+              {m === "weekly" ? "📅 Mingguan" : "🗓 Harian"}
+            </button>
+          ))}
+        </div>
+        {viewMode === "weekly" ? (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setDate(shiftDate(date, -7))}
+              className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-sm text-fg-400 hover:bg-bg-700 hover:text-fg-100"
+              title="Minggu sebelumnya"
+            >
+              ←
+            </button>
+            <div className="rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm font-semibold text-fg-100 min-w-[260px] text-center">
+              {week.label}
+            </div>
+            <button
+              onClick={() => setDate(shiftDate(date, 7))}
+              className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-sm text-fg-400 hover:bg-bg-700 hover:text-fg-100"
+              title="Minggu berikutnya"
+            >
+              →
+            </button>
+            <button
+              onClick={() => setDate(today())}
+              className="rounded-lg border border-bg-700 bg-bg-800 px-3 py-2 text-xs text-fg-400 hover:text-fg-100"
+            >
+              Minggu Ini
+            </button>
+          </div>
+        ) : (
+          <DateNav value={date} onChange={setDate} />
+        )}
+      </div>
+
+      {/* Weekly Summary Cards (mode mingguan) */}
+      {viewMode === "weekly" && rows.length > 0 && (
+        <div className="mb-4 rounded-xl border border-bg-700 bg-bg-800 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-fg-100">📊 Ringkasan Mingguan per Anggota</h3>
+            <div className="text-[10px] text-fg-500">
+              {rows.length} entri · {fN(rows.reduce((a, r) => a + (r.realisasi || 0), 0))} upload total ·{" "}
+              {fN(rows.reduce((a, r) => a + (r.output || 0), 0))} views total
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {weeklyAgg.map((m) => {
+              const t = team.find((x) => x.name === m.anggota);
+              const color = t?.color || "#64748b";
+              return (
+                <div
+                  key={m.anggota}
+                  className="rounded-lg border border-bg-700 bg-bg-900 p-3"
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+                      style={{ backgroundColor: color }}
+                    >
+                      {m.anggota[0]?.toUpperCase() || "?"}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-fg-100">
+                        {m.anggota}
+                      </div>
+                      <div className="text-[10px] text-fg-500">
+                        {m.entries} entri · {m.platforms.length} platform
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded border border-bg-700 bg-bg-800 p-2">
+                      <div className="text-[9px] text-fg-500 uppercase">Upload</div>
+                      <div className="text-base font-bold text-brand-amber">
+                        {fN(m.uploads)}
+                      </div>
+                    </div>
+                    <div className="rounded border border-bg-700 bg-bg-800 p-2">
+                      <div className="text-[9px] text-fg-500 uppercase">Views</div>
+                      <div className="text-base font-bold text-brand-sky">
+                        {fN(m.views)}
+                      </div>
+                    </div>
+                  </div>
+                  {m.platforms.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {m.platforms.map((p) => (
+                        <span
+                          key={p}
+                          className="rounded bg-bg-700 px-1.5 py-0.5 text-[9px] text-fg-300"
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 flex justify-between">
         <div className="text-sm text-fg-300">
-          Total: <span className="font-bold text-fg-100">{rows.length}</span> entri ·{" "}
+          {viewMode === "weekly" ? "Detail entries minggu ini" : `Total ${fmtIdDate(date)}`}: <span className="font-bold text-fg-100">{rows.length}</span> entri ·{" "}
           <span className="text-brand-amber">{fN(rows.reduce((a, r) => a + r.realisasi, 0))}</span>{" "}
           upload ·{" "}
           <span className="text-brand-sky">{fN(rows.reduce((a, r) => a + r.output, 0))}</span> views
@@ -131,6 +281,7 @@ export default function InputReportPage() {
         <table className="w-full text-sm">
           <thead className="bg-bg-900 text-left text-xs uppercase text-fg-500">
             <tr>
+              {viewMode === "weekly" && <th className="p-3">Tanggal</th>}
               <th className="p-3">Anggota</th>
               <th className="p-3">Platform</th>
               <th className="p-3">Tim</th>
@@ -144,40 +295,50 @@ export default function InputReportPage() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-fg-500">
-                  Belum ada data untuk tanggal {fmtIdDate(date)}
+                <td colSpan={viewMode === "weekly" ? 9 : 8} className="p-8 text-center text-fg-500">
+                  Belum ada data untuk{" "}
+                  {viewMode === "weekly" ? week.label : fmtIdDate(date)}
                 </td>
               </tr>
             )}
-            {rows.map((r, i) => (
-              <tr key={r.id} className="border-t border-bg-700 hover:bg-bg-700/30">
-                <td className="p-3 font-semibold text-fg-100">{r.anggota}</td>
-                <td className="p-3">{r.sosmed}</td>
-                <td className="p-3">{r.tim}</td>
-                <td className="p-3 text-fg-300">{r.periode}</td>
-                <td className="p-3 font-bold text-brand-amber">
-                  {fN(r.realisasi)} {r.realisasi_label}
-                </td>
-                <td className="p-3 font-bold text-brand-sky">
-                  {fN(r.output)} {r.output_label}
-                </td>
-                <td className="p-3 text-xs text-fg-500">{r.issue || "-"}</td>
-                <td className="p-3 text-right">
-                  <button
-                    onClick={() => openEdit(r, i)}
-                    className="mr-2 rounded bg-bg-700 px-3 py-1 text-xs font-semibold text-brand-sky hover:bg-bg-700/70"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => remove(r)}
-                    className="rounded bg-red-950/50 px-3 py-1 text-xs font-semibold text-brand-rose hover:bg-red-950/70"
-                  >
-                    Hapus
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {rows
+              .slice()
+              .sort((a, b) => (a.date < b.date ? -1 : 1))
+              .map((r, i) => (
+                <tr key={r.id} className="border-t border-bg-700 hover:bg-bg-700/30">
+                  {viewMode === "weekly" && (
+                    <td className="p-3 text-xs text-fg-400">
+                      <div className="font-mono">{r.date}</div>
+                      <div className="text-[10px]">{dayName(r.date)}</div>
+                    </td>
+                  )}
+                  <td className="p-3 font-semibold text-fg-100">{r.anggota}</td>
+                  <td className="p-3">{r.sosmed}</td>
+                  <td className="p-3">{r.tim}</td>
+                  <td className="p-3 text-fg-300">{r.periode}</td>
+                  <td className="p-3 font-bold text-brand-amber">
+                    {fN(r.realisasi)} {r.realisasi_label}
+                  </td>
+                  <td className="p-3 font-bold text-brand-sky">
+                    {fN(r.output)} {r.output_label}
+                  </td>
+                  <td className="p-3 text-xs text-fg-500">{r.issue || "-"}</td>
+                  <td className="p-3 text-right">
+                    <button
+                      onClick={() => openEdit(r, i)}
+                      className="mr-2 rounded bg-bg-700 px-3 py-1 text-xs font-semibold text-brand-sky hover:bg-bg-700/70"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => remove(r)}
+                      className="rounded bg-red-950/50 px-3 py-1 text-xs font-semibold text-brand-rose hover:bg-red-950/70"
+                    >
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>

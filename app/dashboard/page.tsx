@@ -4,7 +4,7 @@ import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
 import { supabase } from "@/lib/supabase";
 import { DailyWork, IrData, ReportItem, Platform } from "@/lib/types";
-import { today, fN, initials, unpackReportContent } from "@/lib/utils";
+import { today, fN, initials, unpackReportContent, getWeekRange } from "@/lib/utils";
 import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { useCachedData } from "@/hooks/useCachedData";
 
@@ -76,6 +76,48 @@ export default function OverviewPage() {
     },
   });
   const platforms = platformsData || [];
+
+  // ============ WEEKLY IR DATA (untuk widget mingguan) ============
+  const week = getWeekRange(date);
+  const { data: weeklyIrData } = useCachedData<IrData[]>({
+    key: `overview_weekly_ir_${week.start}_${week.end}`,
+    fetcher: async () => {
+      const { data } = await supabase
+        .from("ir_data")
+        .select("*")
+        .gte("date", week.start)
+        .lte("date", week.end);
+      return (data as IrData[]) || [];
+    },
+  });
+  const weeklyIr = weeklyIrData || [];
+
+  // Aggregate per anggota untuk minggu ini
+  const weeklyAggByMember = (() => {
+    const byMember: Record<
+      string,
+      { uploads: number; views: number; entries: number; platforms: Set<string> }
+    > = {};
+    weeklyIr.forEach((r) => {
+      const k = r.anggota || "(unknown)";
+      if (!byMember[k])
+        byMember[k] = { uploads: 0, views: 0, entries: 0, platforms: new Set() };
+      byMember[k].uploads += r.realisasi || 0;
+      byMember[k].views += r.output || 0;
+      byMember[k].entries += 1;
+      if (r.sosmed) byMember[k].platforms.add(r.sosmed);
+    });
+    return Object.entries(byMember)
+      .map(([anggota, v]) => ({ anggota, ...v, platforms: Array.from(v.platforms) }))
+      .sort((a, b) => b.views - a.views);
+  })();
+
+  const weeklyTotals = {
+    uploads: weeklyIr.reduce((a, r) => a + (r.realisasi || 0), 0),
+    views: weeklyIr.reduce((a, r) => a + (r.output || 0), 0),
+    entries: weeklyIr.length,
+    activeMembers: new Set(weeklyIr.map((r) => r.anggota)).size,
+  };
 
   const doneCount = dailyWork.filter((w) => w.status === "done").length;
   const totalAktivitas = dailyWork.length + reports.length + irData.length;
@@ -439,6 +481,105 @@ export default function OverviewPage() {
               </>
             );
           })()}
+        </div>
+      </div>
+
+      {/* WEEKLY IR Report — agregat mingguan per anggota */}
+      <div className="mb-6 rounded-xl border border-bg-700 bg-bg-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bg-700 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold text-brand-amber">📅 Report Mingguan (Input Report)</h4>
+            <span className="rounded bg-bg-900 px-2 py-0.5 text-[10px] text-fg-400">
+              {week.label}
+            </span>
+          </div>
+          <div className="text-xs text-fg-500">
+            <span className="text-brand-amber font-bold">{fN(weeklyTotals.uploads)}</span> upload ·{" "}
+            <span className="text-brand-sky font-bold">{fN(weeklyTotals.views)}</span> views ·{" "}
+            <span className="text-fg-100">{weeklyTotals.activeMembers}</span> anggota aktif
+          </div>
+        </div>
+        <div className="p-5">
+          {weeklyAggByMember.length === 0 ? (
+            <div className="py-8 text-center text-sm text-fg-500">
+              Belum ada Input Report minggu ini.{" "}
+              <a href="/dashboard/input-report" className="text-brand-sky hover:underline">
+                Tambah data →
+              </a>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {weeklyAggByMember.map((m, idx) => {
+                const t = team.find((x) => x.name === m.anggota);
+                const color = t?.color || "#64748b";
+                return (
+                  <div
+                    key={m.anggota}
+                    className="relative rounded-lg border border-bg-700 bg-bg-900 p-3"
+                  >
+                    {idx < 3 && (
+                      <div
+                        className="absolute -top-2 -left-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-bg-800 text-[10px] font-bold text-white"
+                        style={{
+                          backgroundColor:
+                            idx === 0 ? "#fbbf24" : idx === 1 ? "#cbd5e1" : "#d97706",
+                        }}
+                      >
+                        {idx + 1}
+                      </div>
+                    )}
+                    <div className="mb-2 flex items-center gap-2">
+                      <span
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+                        style={{ backgroundColor: color }}
+                      >
+                        {initials(m.anggota)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-bold text-fg-100">
+                          {m.anggota}
+                        </div>
+                        <div className="truncate text-[10px] text-fg-500">
+                          {m.entries} entri · {m.platforms.length} platform
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="rounded border border-bg-700 bg-bg-800 px-2 py-1">
+                        <div className="text-[8px] uppercase text-fg-500">Upload</div>
+                        <div className="text-sm font-bold text-brand-amber">
+                          {fN(m.uploads)}
+                        </div>
+                      </div>
+                      <div className="rounded border border-bg-700 bg-bg-800 px-2 py-1">
+                        <div className="text-[8px] uppercase text-fg-500">Views</div>
+                        <div className="text-sm font-bold text-brand-sky">
+                          {fN(m.views)}
+                        </div>
+                      </div>
+                    </div>
+                    {m.platforms.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {m.platforms.slice(0, 4).map((p) => (
+                          <span
+                            key={p}
+                            className="rounded bg-bg-700 px-1.5 py-0.5 text-[8px] text-fg-300"
+                          >
+                            {p}
+                          </span>
+                        ))}
+                        {m.platforms.length > 4 && (
+                          <span className="text-[8px] text-fg-500">
+                            +{m.platforms.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

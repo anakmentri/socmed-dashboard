@@ -31,6 +31,62 @@ export function dayName(d: string | Date): string {
   return names[new Date(d).getDay()];
 }
 
+/**
+ * Hitung range minggu (Senin–Minggu) untuk tanggal tertentu.
+ * Returns: { start, end, weekNum, label }
+ *   start: string YYYY-MM-DD (Monday)
+ *   end:   string YYYY-MM-DD (Sunday)
+ *   weekNum: ISO week number
+ *   label: 'Minggu 17 (21-27 Apr 2026)'
+ */
+export function getWeekRange(dateStr: string): {
+  start: string;
+  end: string;
+  weekNum: number;
+  label: string;
+} {
+  const d = new Date(dateStr + "T00:00:00");
+  // Senin = 1, Minggu = 0. Jadikan Senin awal minggu.
+  const dayOfWeek = d.getDay() || 7; // Minggu (0) jadi 7
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - (dayOfWeek - 1));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (x: Date) =>
+    `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(
+      x.getDate()
+    ).padStart(2, "0")}`;
+  // ISO Week number
+  const target = new Date(monday);
+  const dayNr = (target.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.getTime();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+  }
+  const weekNum =
+    1 + Math.ceil((firstThursday - target.getTime()) / (7 * 24 * 3600 * 1000));
+  const monthShort = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  const sameMonth = monday.getMonth() === sunday.getMonth();
+  const label = sameMonth
+    ? `Minggu ${weekNum} (${monday.getDate()}–${sunday.getDate()} ${monthShort[monday.getMonth()]} ${monday.getFullYear()})`
+    : `Minggu ${weekNum} (${monday.getDate()} ${monthShort[monday.getMonth()]} – ${sunday.getDate()} ${monthShort[sunday.getMonth()]} ${sunday.getFullYear()})`;
+  return { start: fmt(monday), end: fmt(sunday), weekNum, label };
+}
+
+/**
+ * Adjust tanggal +/- N hari, return ISO date string (YYYY-MM-DD).
+ */
+export function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export type ActivityLogEntry = {
   id: string;
   ts: string;
