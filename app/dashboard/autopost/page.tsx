@@ -1745,9 +1745,78 @@ function AutoPostInner() {
 
       {/* History */}
       <div>
-        <h3 className="mb-3 text-base font-bold text-fg-100">
-          Riwayat {currentPlatform.name} ({history.length})
-        </h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-base font-bold text-fg-100">
+            Riwayat {currentPlatform.name} ({history.length})
+          </h3>
+          {(() => {
+            // Build all URLs from history (sukses only)
+            const allLinks = history
+              .filter((p) => p.status === "posted")
+              .map((p) => {
+                if (tab === "twitter" && "tweet_id" in p && p.tweet_id) {
+                  const tw = p as TwitterPost;
+                  const conn = twConns.find((c) => c.id === tw.connection_id);
+                  const username = conn?.twitter_username || "i";
+                  return {
+                    account: `@${conn?.twitter_username || "?"}`,
+                    url: `https://x.com/${username}/status/${tw.tweet_id}`,
+                  };
+                }
+                if (tab === "telegram" && "external_id" in p && p.external_id) {
+                  const sp = p as SocialPost;
+                  const conn = tgConns.find(
+                    (tg) => tg.owner_name === (sp.target_owner || "")
+                  );
+                  if (!conn) return null;
+                  const chatId = conn.chat_id.startsWith("-100")
+                    ? conn.chat_id.slice(4)
+                    : conn.chat_id.startsWith("@")
+                    ? conn.chat_id.slice(1)
+                    : conn.chat_id;
+                  return {
+                    account: conn.chat_title,
+                    url: chatId.match(/^\d+$/)
+                      ? `https://t.me/c/${chatId}/${sp.external_id}`
+                      : `https://t.me/${chatId}/${sp.external_id}`,
+                  };
+                }
+                return null;
+              })
+              .filter((x): x is { account: string; url: string } => x !== null);
+
+            if (allLinks.length === 0) return null;
+
+            return (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const text = allLinks.map((l) => l.url).join("\n");
+                    navigator.clipboard.writeText(text);
+                    toast(`✅ ${allLinks.length} link riwayat di-copy`);
+                  }}
+                  className="rounded-lg bg-brand-emerald px-3 py-1.5 text-xs font-bold text-bg-900 hover:opacity-90"
+                  title="Copy semua URL hasil post di riwayat (sukses saja)"
+                >
+                  📋 Copy Semua URL ({allLinks.length})
+                </button>
+                <button
+                  onClick={() => {
+                    const text = allLinks
+                      .map((l) => `${l.account}: ${l.url}`)
+                      .join("\n");
+                    navigator.clipboard.writeText(text);
+                    toast(`✅ ${allLinks.length} link + akun di-copy`);
+                  }}
+                  className="rounded-lg bg-bg-700 px-3 py-1.5 text-xs font-bold text-fg-200 hover:bg-bg-600"
+                  title="Copy URL + nama akun"
+                >
+                  📋 + Akun
+                </button>
+              </div>
+            );
+          })()}
+        </div>
         {history.length === 0 ? (
           <div className="rounded-xl border border-bg-700 bg-bg-800 p-6 text-center text-sm text-fg-500">
             Belum ada post

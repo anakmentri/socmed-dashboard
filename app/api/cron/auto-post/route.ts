@@ -97,10 +97,10 @@ async function getTargetAccounts(
 
 async function postToTwitter(
   conn: TwitterConn,
-  content: ContentItem
+  content: ContentItem,
+  postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Call our own /api/twitter/tweet endpoint
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
     const res = await fetch(`${baseUrl}/api/twitter/tweet`, {
       method: "POST",
@@ -111,6 +111,7 @@ async function postToTwitter(
         posted_by: "auto-cron",
         connection_id: conn.id,
         media_base64: content.media_base64 || undefined,
+        post_group: postGroup,
       }),
     });
     const j = await res.json();
@@ -124,7 +125,8 @@ async function postToTwitter(
 
 async function postToTelegram(
   conn: TelegramConn,
-  content: ContentItem
+  content: ContentItem,
+  postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
@@ -132,6 +134,7 @@ async function postToTelegram(
       connection_id: conn.id,
       text: content.text_content,
       posted_by: "auto-cron",
+      post_group: postGroup,
     };
     if (content.media_base64) {
       // Determine media type from base64 prefix
@@ -253,8 +256,8 @@ export async function GET(req: NextRequest) {
     for (const target of targets) {
       const result =
         s.platform === "twitter"
-          ? await postToTwitter(target as TwitterConn, content)
-          : await postToTelegram(target as TelegramConn, content);
+          ? await postToTwitter(target as TwitterConn, content, s.target_group)
+          : await postToTelegram(target as TelegramConn, content, s.target_group);
       if (result.ok) {
         posted++;
       } else {
