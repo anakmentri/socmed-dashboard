@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       media_type,
       media_list,
       posted_by,
+      post_group,
     } = body;
 
     if (!connection_id) {
@@ -198,6 +199,7 @@ export async function POST(req: NextRequest) {
         media_type: mediaTypeLog,
         status: "error",
         error: (tgJson.description || "Unknown error").slice(0, 500),
+        post_group: post_group || null,
       });
       return NextResponse.json(
         { error: tgJson.description || "Gagal kirim", detail: tgJson },
@@ -218,6 +220,7 @@ export async function POST(req: NextRequest) {
       media_type: mediaTypeLog,
       external_id: msgId,
       status: "posted",
+      post_group: post_group || null,
     });
 
     return NextResponse.json({

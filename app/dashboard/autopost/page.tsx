@@ -30,6 +30,7 @@ type SocialPost = {
   status: string;
   error: string | null;
   external_id: string | null;
+  post_group?: string | null;
   created_at: string;
 };
 type TwitterPost = {
@@ -40,6 +41,7 @@ type TwitterPost = {
   status: string;
   error?: string;
   posted_by: string;
+  post_group?: string | null;
   created_at: string;
 };
 
@@ -75,6 +77,7 @@ function AutoPostInner() {
     failed: number;
     currentAccount: string;
     errors: string[];
+    successLinks: Array<{ account: string; url: string }>;
   } | null>(null);
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
@@ -595,12 +598,14 @@ function AutoPostInner() {
       failed: 0,
       currentAccount: "",
       errors: [],
+      successLinks: [],
     });
 
     let done = 0,
       success = 0,
       failed = 0;
     const errors: string[] = [];
+    const successLinks: Array<{ account: string; url: string }> = [];
 
     for (const conn of group.accounts) {
       const username =
@@ -623,11 +628,14 @@ function AutoPostInner() {
               posted_by: myName,
               connection_id: conn.id,
               media_base64: mediaBase64 || undefined,
+              post_group: group.name,
             }),
           });
           const j = await res.json();
-          if (res.ok) success++;
-          else {
+          if (res.ok) {
+            success++;
+            if (j.url) successLinks.push({ account: username, url: j.url });
+          } else {
             failed++;
             errors.push(`${username}: ${j.error || "error"}`);
           }
@@ -660,13 +668,28 @@ function AutoPostInner() {
                   mediaList.length === 0 && mediaBase64 ? mediaBase64 : undefined,
                 media_type: mediaList.length === 0 ? mediaType : undefined,
                 posted_by: myName,
+                post_group: group.name,
               }),
             });
             const j = await res.json().catch(() => ({}));
             result = { ok: res.ok, error: j.error };
           }
-          if (result.ok) success++;
-          else {
+          if (result.ok) {
+            success++;
+            // Build link for Telegram
+            const chatId = tgConn.chat_id.startsWith("-100")
+              ? tgConn.chat_id.slice(4)
+              : tgConn.chat_id.startsWith("@")
+              ? tgConn.chat_id.slice(1)
+              : tgConn.chat_id;
+            // Note: external_id (message_id) gak return langsung dari direct upload, skip URL untuk telegram bulk
+            successLinks.push({
+              account: username,
+              url: chatId.match(/^\d+$/)
+                ? `https://t.me/c/${chatId}`
+                : `https://t.me/${chatId}`,
+            });
+          } else {
             failed++;
             errors.push(`${username}: ${result.error || "error"}`);
           }
@@ -678,7 +701,7 @@ function AutoPostInner() {
 
       done++;
       setBulkPosting((p) =>
-        p ? { ...p, done, success, failed, errors } : null
+        p ? { ...p, done, success, failed, errors, successLinks: [...successLinks] } : null
       );
 
       // Delay antar request — hindari rate limit
@@ -1328,6 +1351,66 @@ function AutoPostInner() {
               )}
             </div>
 
+            {/* Success links — copy all + per-link copy */}
+            {bulkPosting.done === bulkPosting.total && bulkPosting.successLinks.length > 0 && (
+              <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-brand-emerald">
+                    🔗 {bulkPosting.successLinks.length} Link Hasil Post
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => {
+                        const text = bulkPosting.successLinks.map((l) => l.url).join("\n");
+                        navigator.clipboard.writeText(text);
+                        toast(`✅ ${bulkPosting.successLinks.length} link di-copy ke clipboard`);
+                      }}
+                      className="rounded bg-brand-emerald px-2 py-1 text-[10px] font-bold text-bg-900 hover:opacity-90"
+                    >
+                      📋 Copy Semua URL
+                    </button>
+                    <button
+                      onClick={() => {
+                        const text = bulkPosting.successLinks
+                          .map((l) => `${l.account}: ${l.url}`)
+                          .join("\n");
+                        navigator.clipboard.writeText(text);
+                        toast(`✅ ${bulkPosting.successLinks.length} link + akun di-copy`);
+                      }}
+                      className="rounded bg-bg-700 px-2 py-1 text-[10px] font-bold text-fg-200 hover:bg-bg-600"
+                    >
+                      📋 Copy + Akun
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded bg-bg-900 p-2 font-mono text-[10px]">
+                  {bulkPosting.successLinks.map((l, i) => (
+                    <div key={i} className="flex items-center gap-2 py-0.5">
+                      <span className="text-fg-500 w-32 shrink-0 truncate">{l.account}</span>
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate text-brand-sky hover:underline flex-1"
+                      >
+                        {l.url}
+                      </a>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(l.url);
+                          toast("Link di-copy");
+                        }}
+                        className="text-fg-400 hover:text-fg-100"
+                        title="Copy link ini"
+                      >
+                        📋
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {bulkPosting.errors.length > 0 && bulkPosting.done === bulkPosting.total && (
               <details className="mt-2 text-[11px]">
                 <summary className="cursor-pointer text-brand-rose">
@@ -1508,6 +1591,157 @@ function AutoPostInner() {
           </button>
         </div>
       </div>
+
+      {/* Grouped Bulk History — per post_group untuk copy semua link sekaligus */}
+      {(() => {
+        // Group history yang punya post_group, sorted by created_at desc
+        const grouped: Record<string, Array<TwitterPost | SocialPost>> = {};
+        history
+          .filter((p) => p.status === "posted" && "post_group" in p && p.post_group)
+          .forEach((p) => {
+            const k = p.post_group!;
+            grouped[k] = grouped[k] || [];
+            grouped[k].push(p);
+          });
+        // Order: Post 1, Post 2, Post 3, Post Short
+        const order = ["Post 1", "Post 2", "Post 3", "Post Short"];
+        const sortedKeys = Object.keys(grouped).sort(
+          (a, b) => order.indexOf(a) - order.indexOf(b)
+        );
+
+        if (sortedKeys.length === 0) return null;
+
+        return (
+          <div className="mb-6">
+            <h3 className="mb-3 text-base font-bold text-fg-100">
+              📊 Hasil Bulk Post per Group
+            </h3>
+            <div className="space-y-3">
+              {sortedKeys.map((groupName) => {
+                const items = grouped[groupName];
+                const isShort = groupName === "Post Short";
+                // Build URLs untuk group ini
+                const links = items
+                  .map((p) => {
+                    if (tab === "twitter" && "tweet_id" in p && p.tweet_id) {
+                      const tw = p as TwitterPost;
+                      const conn = twConns.find((c) => c.id === tw.connection_id);
+                      const username = conn?.twitter_username || "i";
+                      return {
+                        account: `@${conn?.twitter_username || "?"}`,
+                        url: `https://x.com/${username}/status/${tw.tweet_id}`,
+                      };
+                    }
+                    if (tab === "telegram" && "external_id" in p && p.external_id) {
+                      const sp = p as SocialPost;
+                      const conn = tgConns.find(
+                        (tg) => tg.owner_name === (sp.target_owner || "")
+                      );
+                      if (!conn) return null;
+                      const chatId = conn.chat_id.startsWith("-100")
+                        ? conn.chat_id.slice(4)
+                        : conn.chat_id.startsWith("@")
+                        ? conn.chat_id.slice(1)
+                        : conn.chat_id;
+                      return {
+                        account: conn.chat_title,
+                        url: chatId.match(/^\d+$/)
+                          ? `https://t.me/c/${chatId}/${sp.external_id}`
+                          : `https://t.me/${chatId}/${sp.external_id}`,
+                      };
+                    }
+                    return null;
+                  })
+                  .filter((x): x is { account: string; url: string } => x !== null);
+
+                return (
+                  <div
+                    key={groupName}
+                    className={`rounded-xl border p-3 ${
+                      isShort
+                        ? "border-amber-500/40 bg-amber-500/5"
+                        : "border-bg-700 bg-bg-800"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-sm font-bold ${
+                            isShort ? "text-brand-amber" : "text-brand-sky"
+                          }`}
+                        >
+                          {isShort && "⚡ "}
+                          {groupName}
+                        </span>
+                        <span className="text-[10px] text-fg-500">
+                          {items.length} post · {links.length} link
+                        </span>
+                      </div>
+                      {links.length > 0 && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              const text = links.map((l) => l.url).join("\n");
+                              navigator.clipboard.writeText(text);
+                              toast(`✅ ${links.length} link ${groupName} di-copy`);
+                            }}
+                            className="rounded bg-brand-emerald px-2 py-1 text-[10px] font-bold text-bg-900 hover:opacity-90"
+                            title="Copy semua URL ke clipboard"
+                          >
+                            📋 Copy Semua
+                          </button>
+                          <button
+                            onClick={() => {
+                              const text = links
+                                .map((l) => `${l.account}: ${l.url}`)
+                                .join("\n");
+                              navigator.clipboard.writeText(text);
+                              toast(`✅ ${links.length} link + akun di-copy`);
+                            }}
+                            className="rounded bg-bg-700 px-2 py-1 text-[10px] font-bold text-fg-200 hover:bg-bg-600"
+                            title="Copy URL + nama akun"
+                          >
+                            📋 Copy + Akun
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {links.length > 0 && (
+                      <div className="max-h-64 overflow-y-auto rounded bg-bg-900 p-2 font-mono text-[10px]">
+                        {links.map((l, i) => (
+                          <div key={i} className="flex items-center gap-2 py-0.5">
+                            <span className="w-32 shrink-0 truncate text-fg-500">
+                              {l.account}
+                            </span>
+                            <a
+                              href={l.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex-1 truncate text-brand-sky hover:underline"
+                            >
+                              {l.url}
+                            </a>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(l.url);
+                                toast("Link di-copy");
+                              }}
+                              className="text-fg-400 hover:text-fg-100"
+                              title="Copy link ini"
+                            >
+                              📋
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* History */}
       <div>

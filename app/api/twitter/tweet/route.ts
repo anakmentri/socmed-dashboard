@@ -60,7 +60,7 @@ async function refreshTokenIfNeeded(conn: {
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, owner, posted_by, connection_id, media_base64 } = await req.json();
+    const { text, owner, posted_by, connection_id, media_base64, post_group } = await req.json();
 
     if (!text && !media_base64) {
       return NextResponse.json({ error: "Text atau media wajib ada" }, { status: 400 });
@@ -204,6 +204,7 @@ export async function POST(req: NextRequest) {
         text_content: text,
         status: "error",
         error: JSON.stringify(tweetJson).slice(0, 500),
+        post_group: post_group || null,
       });
       return NextResponse.json(
         { error: tweetJson.title || tweetJson.error || "Gagal post", detail: tweetJson },
@@ -212,18 +213,20 @@ export async function POST(req: NextRequest) {
     }
 
     const tweetId = tweetJson.data?.id;
+    const tweetUrl = `https://x.com/${conn.twitter_username || "i"}/status/${tweetId}`;
     await supabase.from("twitter_posts").insert({
       connection_id: conn.id,
       posted_by: posted_by || conn.owner_name,
       tweet_id: tweetId,
       text_content: text,
       status: "posted",
+      post_group: post_group || null,
     });
 
     return NextResponse.json({
       ok: true,
       tweet_id: tweetId,
-      url: `https://twitter.com/${conn.twitter_username || "i"}/status/${tweetId}`,
+      url: tweetUrl,
     });
   } catch (e) {
     return NextResponse.json(
