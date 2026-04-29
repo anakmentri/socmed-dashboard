@@ -21,6 +21,9 @@ const ALLOWED_TABLES = new Set([
   "telegram_connections",
   "social_posts",
   "activity_log",
+  "content_library",
+  "post_schedules",
+  "scheduled_runs",
 ]);
 
 // PostgREST operator → SQL clause builder

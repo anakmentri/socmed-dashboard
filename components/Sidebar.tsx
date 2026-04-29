@@ -11,6 +11,7 @@ const MENU = [
   { href: "/dashboard/accounts", label: "Akun Sosmed", icon: "◎", memberOk: true },
   { href: "/dashboard/assets", label: "Asset Library", icon: "▢", memberOk: true },
   { href: "/dashboard/autopost", label: "Auto Post", icon: "🚀", memberOk: true },
+  { href: "/dashboard/scheduler", label: "Scheduler", icon: "⏰", adminOnly: true },
   { href: "/dashboard/attendance", label: "Kehadiran", icon: "✓", memberOk: true },
   { href: "/dashboard/team", label: "Anggota Tim", icon: "◆", adminOnly: true },
   { href: "/dashboard/history", label: "History", icon: "⟳", adminOnly: true },
