@@ -267,8 +267,9 @@ export async function GET(req: NextRequest) {
           error: result.error || "unknown",
         });
       }
-      // Small delay between posts (rate limit)
-      await new Promise((r) => setTimeout(r, s.platform === "twitter" ? 800 : 200));
+      // Small delay between posts (rate limit) — reduced biar respons < 30s
+      // untuk cron-job.org free tier timeout
+      await new Promise((r) => setTimeout(r, s.platform === "twitter" ? 250 : 100));
     }
 
     // Log run
