@@ -156,37 +156,35 @@ async function postToTwitter(
   postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Resolve media: prefer base64 inline, fallback fetch dari URL
-    let mediaBase64: string | null = content.media_base64;
-    let mediaWarning = "";
-    if (!mediaBase64 && content.media_url) {
-      const fetched = await fetchUrlAsBase64(content.media_url);
-      if (fetched.base64) {
-        mediaBase64 = fetched.base64;
-      } else {
-        // Media URL fetch gagal — tetep post text-only, kasih warning
-        mediaWarning = ` (media skip: ${fetched.error})`;
-      }
-    }
-
+    // PASS media_url ke endpoint — endpoint fetch sendiri internal
+    // (bypass Vercel body limit dari cron→endpoint HTTP)
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
+    const payload: Record<string, unknown> = {
+      text: content.text_content,
+      owner: conn.owner_name,
+      posted_by: "auto-cron",
+      connection_id: conn.id,
+      post_group: postGroup,
+    };
+    // Prefer URL kalau ada (no body inflation), fallback base64 (kalau kecil)
+    if (content.media_url) {
+      payload.media_url = content.media_url;
+    } else if (content.media_base64) {
+      payload.media_base64 = content.media_base64;
+    }
     const res = await fetch(`${baseUrl}/api/twitter/tweet`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: content.text_content,
-        owner: conn.owner_name,
-        posted_by: "auto-cron",
-        connection_id: conn.id,
-        media_base64: mediaBase64 || undefined,
-        post_group: postGroup,
-      }),
+      body: JSON.stringify(payload),
     });
-    const j = await res.json();
-    if (res.ok) {
-      return mediaWarning ? { ok: true, error: mediaWarning } : { ok: true };
+    const txt = await res.text();
+    let j: { error?: string } = {};
+    try {
+      j = JSON.parse(txt);
+    } catch {
+      j = { error: txt.slice(0, 100) };
     }
-    return { ok: false, error: (j.error || `HTTP ${res.status}`) + mediaWarning };
+    return res.ok ? { ok: true } : { ok: false, error: j.error || `HTTP ${res.status}` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "exception" };
   }
@@ -198,13 +196,6 @@ async function postToTelegram(
   postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Resolve media: prefer base64, fallback fetch URL
-    let mediaBase64: string | null = content.media_base64;
-    if (!mediaBase64 && content.media_url) {
-      const fetched = await fetchUrlAsBase64(content.media_url);
-      mediaBase64 = fetched.base64;
-    }
-
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
     const body: Record<string, unknown> = {
       connection_id: conn.id,
@@ -212,9 +203,12 @@ async function postToTelegram(
       posted_by: "auto-cron",
       post_group: postGroup,
     };
-    if (mediaBase64) {
-      const isVideo = mediaBase64.startsWith("data:video");
-      body.media_base64 = mediaBase64;
+    // Prefer URL (no body inflation)
+    if (content.media_url) {
+      body.media_url = content.media_url;
+    } else if (content.media_base64) {
+      const isVideo = content.media_base64.startsWith("data:video");
+      body.media_base64 = content.media_base64;
       body.media_type = isVideo ? "video" : "photo";
     }
     const res = await fetch(`${baseUrl}/api/telegram/send`, {

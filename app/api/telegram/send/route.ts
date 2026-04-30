@@ -23,12 +23,37 @@ export async function POST(req: NextRequest) {
     const {
       connection_id,
       text,
-      media_base64,
-      media_type,
+      media_base64: rawMediaBase64,
+      media_type: rawMediaType,
       media_list,
+      media_url,
       posted_by,
       post_group,
     } = body;
+
+    // Resolve media: kalau media_url provided, fetch internal (bypass body limit)
+    let media_base64: string | null = rawMediaBase64 || null;
+    let media_type = rawMediaType;
+    if (!media_base64 && media_url) {
+      try {
+        let url = media_url as string;
+        const driveMatch = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+        if (driveMatch) url = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+        if (url.includes("dropbox.com") && url.includes("dl=0"))
+          url = url.replace("dl=0", "dl=1");
+        const fetchRes = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60000) });
+        if (fetchRes.ok) {
+          const ct = fetchRes.headers.get("content-type") || "";
+          if (ct.startsWith("image/") || ct.startsWith("video/")) {
+            const buf = Buffer.from(await fetchRes.arrayBuffer());
+            media_base64 = `data:${ct};base64,${buf.toString("base64")}`;
+            if (!media_type) media_type = ct.startsWith("video/") ? "video" : "photo";
+          }
+        }
+      } catch {
+        // Silent fail — lanjut tanpa media
+      }
+    }
 
     if (!connection_id) {
       return NextResponse.json({ error: "connection_id required" }, { status: 400 });

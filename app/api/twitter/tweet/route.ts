@@ -60,7 +60,48 @@ async function refreshTokenIfNeeded(conn: {
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, owner, posted_by, connection_id, media_base64, post_group } = await req.json();
+    const { text, owner, posted_by, connection_id, media_base64: rawMediaBase64, media_url, post_group } = await req.json();
+
+    // Resolve media: kalau media_url provided, fetch + convert ke base64 di sini
+    // (bypass Vercel body limit — fetch internal gak kena 4.5MB cap).
+    let media_base64: string | null = rawMediaBase64 || null;
+    if (!media_base64 && media_url) {
+      try {
+        // Auto-convert Google Drive sharing → direct download
+        let url = media_url as string;
+        const driveMatch = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+        if (driveMatch) url = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+        const driveOpen = url.match(/drive\.google\.com\/open\?id=([\w-]+)/);
+        if (driveOpen) url = `https://drive.google.com/uc?export=download&id=${driveOpen[1]}`;
+        if (url.includes("dropbox.com") && url.includes("dl=0"))
+          url = url.replace("dl=0", "dl=1");
+
+        const fetchRes = await fetch(url, {
+          redirect: "follow",
+          signal: AbortSignal.timeout(60000),
+        });
+        if (!fetchRes.ok) {
+          return NextResponse.json(
+            { error: `Fetch media URL gagal: HTTP ${fetchRes.status}` },
+            { status: 400 }
+          );
+        }
+        const ct = fetchRes.headers.get("content-type") || "";
+        if (!ct.startsWith("image/") && !ct.startsWith("video/")) {
+          return NextResponse.json(
+            { error: `URL bukan media (content-type: ${ct.slice(0, 60)}). Pastikan URL adalah direct download link.` },
+            { status: 400 }
+          );
+        }
+        const buf = Buffer.from(await fetchRes.arrayBuffer());
+        media_base64 = `data:${ct};base64,${buf.toString("base64")}`;
+      } catch (e) {
+        return NextResponse.json(
+          { error: `Fetch media URL error: ${e instanceof Error ? e.message.slice(0, 100) : "unknown"}` },
+          { status: 400 }
+        );
+      }
+    }
 
     if (!text && !media_base64) {
       return NextResponse.json({ error: "Text atau media wajib ada" }, { status: 400 });
