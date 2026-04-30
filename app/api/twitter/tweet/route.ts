@@ -11,6 +11,108 @@ function getSupabase() {
   );
 }
 
+/**
+ * Upload video ke Twitter via chunked upload (INIT/APPEND/FINALIZE/STATUS).
+ * Required untuk video > 5MB (single-shot reject 413).
+ * Twitter v2 /2/media/upload mendukung command query param.
+ */
+async function uploadVideoChunked(
+  accessToken: string,
+  buf: Buffer,
+  mimeType: string
+): Promise<{ media_id: string | null; error?: string }> {
+  const totalBytes = buf.length;
+  const baseUrl = "https://api.x.com/2/media/upload";
+
+  // ============ INIT ============
+  const initBody = new URLSearchParams({
+    command: "INIT",
+    total_bytes: String(totalBytes),
+    media_type: mimeType,
+    media_category: "tweet_video",
+  });
+  const initRes = await fetch(`${baseUrl}?${initBody.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!initRes.ok) {
+    const txt = await initRes.text().catch(() => "");
+    return { media_id: null, error: `INIT HTTP ${initRes.status}: ${txt.slice(0, 200)}` };
+  }
+  const initJson = await initRes.json().catch(() => ({}));
+  const mediaId =
+    initJson.data?.id ||
+    initJson.media_id_string ||
+    String(initJson.media_id || "");
+  if (!mediaId) {
+    return { media_id: null, error: `INIT no media_id: ${JSON.stringify(initJson).slice(0, 200)}` };
+  }
+
+  // ============ APPEND chunks (max 4MB each, safe under Twitter 5MB chunk limit) ============
+  const CHUNK_SIZE = 4 * 1024 * 1024;
+  let segmentIndex = 0;
+  for (let offset = 0; offset < totalBytes; offset += CHUNK_SIZE) {
+    const chunk = buf.subarray(offset, Math.min(offset + CHUNK_SIZE, totalBytes));
+    const form = new FormData();
+    form.append(
+      "media",
+      new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" })
+    );
+    const appendUrl = `${baseUrl}?command=APPEND&media_id=${mediaId}&segment_index=${segmentIndex}`;
+    const appendRes = await fetch(appendUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    });
+    if (!appendRes.ok) {
+      const txt = await appendRes.text().catch(() => "");
+      return {
+        media_id: null,
+        error: `APPEND seg ${segmentIndex} HTTP ${appendRes.status}: ${txt.slice(0, 200)}`,
+      };
+    }
+    segmentIndex++;
+  }
+
+  // ============ FINALIZE ============
+  const finalUrl = `${baseUrl}?command=FINALIZE&media_id=${mediaId}`;
+  const finalRes = await fetch(finalUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!finalRes.ok) {
+    const txt = await finalRes.text().catch(() => "");
+    return { media_id: null, error: `FINALIZE HTTP ${finalRes.status}: ${txt.slice(0, 200)}` };
+  }
+  const finalJson = await finalRes.json().catch(() => ({}));
+
+  // ============ STATUS poll (video processing) ============
+  let processingInfo = finalJson.data?.processing_info || finalJson.processing_info;
+  let attempts = 0;
+  const maxAttempts = 20; // ~60s max wait
+  while (processingInfo && processingInfo.state !== "succeeded" && attempts < maxAttempts) {
+    if (processingInfo.state === "failed") {
+      return {
+        media_id: null,
+        error: `Processing failed: ${processingInfo.error?.message || "unknown"}`,
+      };
+    }
+    const checkAfterSec = processingInfo.check_after_secs || 2;
+    await new Promise((r) => setTimeout(r, checkAfterSec * 1000));
+    const statusUrl = `${baseUrl}?command=STATUS&media_id=${mediaId}`;
+    const statusRes = await fetch(statusUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!statusRes.ok) break;
+    const statusJson = await statusRes.json().catch(() => ({}));
+    processingInfo =
+      statusJson.data?.processing_info || statusJson.processing_info;
+    attempts++;
+  }
+
+  return { media_id: mediaId };
+}
+
 async function refreshTokenIfNeeded(conn: {
   id: number;
   access_token: string;
@@ -146,8 +248,8 @@ export async function POST(req: NextRequest) {
     const accessToken = await refreshTokenIfNeeded(conn);
 
     // Upload media via v2 endpoint (OAuth 2.0 user context).
-    // WAJIB scope 'media.write' — kalau akun belum re-auth setelah scope ditambah,
-    // bakal error 403 dan user perlu disconnect+reconnect Twitter.
+    // - Photo: single-shot upload (max 5MB)
+    // - Video: chunked upload INIT/APPEND/FINALIZE/STATUS (max 512MB)
     let mediaId: string | null = null;
     let mediaError: string | null = null;
     if (media_base64) {
@@ -162,51 +264,58 @@ export async function POST(req: NextRequest) {
           const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
           const fileName = isVideo ? `video.${ext}` : `photo.${ext}`;
 
-          const form = new FormData();
-          // Twitter v2 media upload: butuh field 'media' dengan binary
-          form.append(
-            "media",
-            new Blob([new Uint8Array(buf)], { type: mimeType }),
-            fileName
-          );
-          // media_category membantu Twitter klasifikasikan asset
-          form.append("media_category", isVideo ? "tweet_video" : "tweet_image");
-
-          const upRes = await fetch("https://api.x.com/2/media/upload", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${accessToken}` },
-            body: form,
-          });
-
-          let upJson: { data?: { id?: string; media_key?: string }; errors?: Array<{ message?: string; title?: string }>; title?: string; detail?: string; media_id_string?: string; reason?: string };
-          try {
-            upJson = await upRes.json();
-          } catch {
-            upJson = {};
-          }
-
-          if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
-            mediaId = upJson.data?.id || upJson.media_id_string || null;
+          if (isVideo) {
+            // ============ CHUNKED UPLOAD untuk video ============
+            const chunked = await uploadVideoChunked(accessToken, buf, mimeType);
+            if (chunked.media_id) {
+              mediaId = chunked.media_id;
+            } else {
+              mediaError = `Video upload gagal: ${chunked.error || "unknown"}`;
+            }
           } else {
-            const errMsg =
-              upJson.errors?.[0]?.message ||
-              upJson.errors?.[0]?.title ||
-              upJson.title ||
-              upJson.detail ||
-              upJson.reason ||
-              `HTTP ${upRes.status}`;
-            mediaError = `Media upload gagal: ${errMsg}`;
-            // Hint kalau scope issue
-            if (upRes.status === 403 || /scope|permission|forbidden/i.test(errMsg)) {
-              mediaError +=
-                ". Akun Twitter perlu di-disconnect lalu Connect ulang (scope 'media.write' baru ditambah).";
+            // ============ SINGLE-SHOT untuk photo ============
+            const form = new FormData();
+            form.append(
+              "media",
+              new Blob([new Uint8Array(buf)], { type: mimeType }),
+              fileName
+            );
+            form.append("media_category", "tweet_image");
+
+            const upRes = await fetch("https://api.x.com/2/media/upload", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${accessToken}` },
+              body: form,
+            });
+
+            let upJson: { data?: { id?: string; media_key?: string }; errors?: Array<{ message?: string; title?: string }>; title?: string; detail?: string; media_id_string?: string; reason?: string };
+            try {
+              upJson = await upRes.json();
+            } catch {
+              upJson = {};
             }
-            // Hint kalau tier issue
-            if (upRes.status === 429 || /credit|quota|rate/i.test(errMsg)) {
-              mediaError +=
-                ". Cek subscription Twitter API kamu (Free tier tidak support media upload, butuh Basic+).";
+
+            if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
+              mediaId = upJson.data?.id || upJson.media_id_string || null;
+            } else {
+              const errMsg =
+                upJson.errors?.[0]?.message ||
+                upJson.errors?.[0]?.title ||
+                upJson.title ||
+                upJson.detail ||
+                upJson.reason ||
+                `HTTP ${upRes.status}`;
+              mediaError = `Media upload gagal: ${errMsg}`;
+              if (upRes.status === 403 || /scope|permission|forbidden/i.test(errMsg)) {
+                mediaError +=
+                  ". Akun Twitter perlu di-disconnect lalu Connect ulang (scope 'media.write' baru ditambah).";
+              }
+              if (upRes.status === 429 || /credit|quota|rate/i.test(errMsg)) {
+                mediaError +=
+                  ". Cek subscription Twitter API kamu (butuh Basic+).";
+              }
+              console.warn("Twitter media upload failed:", upRes.status, upJson);
             }
-            console.warn("Twitter media upload failed:", upRes.status, upJson);
           }
         } catch (e) {
           mediaError = e instanceof Error ? e.message : "Media upload error";

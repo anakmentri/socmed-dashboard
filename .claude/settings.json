@@ -175,7 +175,15 @@
       "Bash(curl -sI -L \"https://drive.google.com/uc?export=download&id=1fclwxjclVsF0O0nRVYXPTN0j0LplyiF-\")",
       "Bash(curl -sI \"https://drive.usercontent.google.com/download?id=1fclwxjclVsF0O0nRVYXPTN0j0LplyiF-&export=download\")",
       "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://drive.google.com/file/d/1fcIwxjcIVsF0O0nRVYXPTN0j0LpIyiF-/view?usp=drive_link\",\"posted_by\":\"test\"}')",
-      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test img\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://i.imgur.com/JYP2pRt.jpg\",\"posted_by\":\"test\"}')"
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test img\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://i.imgur.com/JYP2pRt.jpg\",\"posted_by\":\"test\"}')",
+      "Bash(curl -sI \"https://files.catbox.moe/u642tb.mp4\")",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code}\\\\nSize: %{size_download} bytes\\\\nContent-Type: %{content_type}\\\\n\" \"https://files.catbox.moe/u642tb.mp4\")",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Size: %{size_download} | Type: %{content_type}\\\\n\" \"https://sample-videos.com/video321/mp4/360/big_buck_bunny_360p_1mb.mp4\")",
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test video upload\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://sample-videos.com/video321/mp4/360/big_buck_bunny_360p_1mb.mp4\",\"posted_by\":\"test\"}')",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Size: %{size_download} bytes | Type: %{content_type}\\\\n\" -L \"https://filesamples.com/samples/video/mp4/sample_640x360.mp4\")",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Size: %{size_download} bytes | Type: %{content_type}\\\\n\" -L \"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\")",
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test small video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://filesamples.com/samples/video/mp4/sample_640x360.mp4\",\"posted_by\":\"test\"}')",
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test medium video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\",\"posted_by\":\"test\"}')"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
