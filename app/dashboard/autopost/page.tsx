@@ -872,10 +872,12 @@ function AutoPostInner() {
 
     setScheduling(true);
     try {
+      // Member: kirim ke semua akun mereka (group "All"), admin: pilih Post 1/2/3/Short
+      const targetGroup = isMember ? "All" : scheduleGroup;
       const payload = {
         platform: tab,
         owner_name: owner,
-        target_group: scheduleGroup,
+        target_group: targetGroup,
         text_content: text,
         media_base64: mediaB64,
         media_url: mediaUrl,
@@ -920,11 +922,13 @@ function AutoPostInner() {
     }>
   >([]);
   const loadScheduledPosts = async () => {
-    const { data } = await supabase
+    // Member: only their own pending posts. Admin: all.
+    let q = supabase
       .from("scheduled_posts")
       .select("id,target_group,text_content,scheduled_at,owner_name,platform")
-      .eq("status", "pending")
-      .order("scheduled_at", { ascending: true });
+      .eq("status", "pending");
+    if (isMember && myName) q = q.eq("owner_name", myName);
+    const { data } = await q.order("scheduled_at", { ascending: true });
     setPendingSchedules(data || []);
   };
   const cancelScheduled = async (id: number) => {
@@ -1470,54 +1474,73 @@ function AutoPostInner() {
           )}
         </div>
 
-        {/* Bulk Post Groups: Post 1 (45) · Post 2 (45) · Post 3 (45) · Short (15) */}
+        {/* Bulk Post — admin pakai grouping 45/45/45/15, member pakai single button */}
         {availConns.length > 0 && (
           <div className="mb-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-500">
-                📢 Bulk Post — kirim sekaligus ke banyak akun
+                📢 Bulk Post — kirim sekaligus ke {isMember ? "akun kamu" : "banyak akun"}
               </span>
               <span className="text-[10px] text-fg-500">
                 {availConns.length} akun terhubung
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {buildGroups(availConns).map((g) => {
-                const filled = g.accounts.length;
-                const isShort = g.name === "Post Short";
-                const disabled = filled === 0 || posting || !!bulkPosting;
-                return (
-                  <button
-                    key={g.name}
-                    onClick={() => bulkPost(g)}
-                    disabled={disabled}
-                    className={`flex flex-col items-center justify-center rounded-lg border-2 px-3 py-3 transition ${
-                      disabled
-                        ? "border-bg-700 bg-bg-900 text-fg-600 opacity-50 cursor-not-allowed"
-                        : isShort
-                        ? "border-amber-500/40 bg-amber-500/5 text-brand-amber hover:bg-amber-500/15"
-                        : "border-bg-700 bg-bg-800 text-fg-200 hover:border-current hover:text-fg-100"
-                    }`}
-                    style={{
-                      color: !disabled && !isShort ? currentPlatform.color : undefined,
-                    }}
-                    title={
-                      filled > 0
-                        ? `Kirim ke ${filled} akun di ${g.name}`
-                        : `${g.name} belum ada akun terhubung (slot 0/${g.size})`
-                    }
-                  >
-                    <span className="text-sm font-bold">
-                      {isShort && "⚡ "}
-                      {g.name}
-                    </span>
-                    <span className="text-[10px] opacity-80">
-                      {filled}/{g.size} akun
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            {isMember ? (
+              // Member view: 1 tombol "Post ke Semua Akun Saya"
+              <button
+                onClick={() => {
+                  const grp = {
+                    name: "All",
+                    size: availConns.length,
+                    accounts: availConns,
+                  };
+                  bulkPost(grp);
+                }}
+                disabled={posting || !!bulkPosting}
+                className="w-full rounded-lg border-2 border-bg-700 bg-bg-800 px-4 py-3 text-sm font-bold text-fg-100 transition hover:border-current disabled:opacity-40"
+                style={{ color: currentPlatform.color }}
+              >
+                🚀 Post ke Semua Akun Saya ({availConns.length} {tab === "twitter" ? "Twitter" : "Telegram"})
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {buildGroups(availConns).map((g) => {
+                  const filled = g.accounts.length;
+                  const isShort = g.name === "Post Short";
+                  const disabled = filled === 0 || posting || !!bulkPosting;
+                  return (
+                    <button
+                      key={g.name}
+                      onClick={() => bulkPost(g)}
+                      disabled={disabled}
+                      className={`flex flex-col items-center justify-center rounded-lg border-2 px-3 py-3 transition ${
+                        disabled
+                          ? "border-bg-700 bg-bg-900 text-fg-600 opacity-50 cursor-not-allowed"
+                          : isShort
+                          ? "border-amber-500/40 bg-amber-500/5 text-brand-amber hover:bg-amber-500/15"
+                          : "border-bg-700 bg-bg-800 text-fg-200 hover:border-current hover:text-fg-100"
+                      }`}
+                      style={{
+                        color: !disabled && !isShort ? currentPlatform.color : undefined,
+                      }}
+                      title={
+                        filled > 0
+                          ? `Kirim ke ${filled} akun di ${g.name}`
+                          : `${g.name} belum ada akun terhubung (slot 0/${g.size})`
+                      }
+                    >
+                      <span className="text-sm font-bold">
+                        {isShort && "⚡ "}
+                        {g.name}
+                      </span>
+                      <span className="text-[10px] opacity-80">
+                        {filled}/{g.size} akun
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1830,18 +1853,24 @@ function AutoPostInner() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">
-                  Target Group
+                  Target {isMember ? "Akun" : "Group"}
                 </label>
-                <select
-                  className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
-                  value={scheduleGroup}
-                  onChange={(e) => setScheduleGroup(e.target.value)}
-                >
-                  <option value="Post 1">Post 1 (45 akun)</option>
-                  <option value="Post 2">Post 2 (45 akun)</option>
-                  <option value="Post 3">Post 3 (45 akun)</option>
-                  <option value="Post Short">Post Short (15 akun)</option>
-                </select>
+                {isMember ? (
+                  <div className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100">
+                    🚀 Semua akun saya ({availConns.length} {tab === "twitter" ? "Twitter" : "Telegram"})
+                  </div>
+                ) : (
+                  <select
+                    className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
+                    value={scheduleGroup}
+                    onChange={(e) => setScheduleGroup(e.target.value)}
+                  >
+                    <option value="Post 1">Post 1 (45 akun)</option>
+                    <option value="Post 2">Post 2 (45 akun)</option>
+                    <option value="Post 3">Post 3 (45 akun)</option>
+                    <option value="Post Short">Post Short (15 akun)</option>
+                  </select>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">

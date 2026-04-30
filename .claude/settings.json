@@ -189,7 +189,9 @@
       "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test chunked v1.1\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\",\"posted_by\":\"test\"}')",
       "Bash(curl -s \"https://socmedanalytics.com/api/pgrest/scheduled_posts?order=id.desc&limit=5\")",
       "Bash(curl -s -X GET \"https://socmedanalytics.com/api/cron/auto-post\" -H \"Authorization: Bearer 2Pq35meXPM59/IzZG9U5jiITObSA6hAS\")",
-      "Bash(curl -s \"https://socmedanalytics.com/api/pgrest/scheduled_posts?order=id.desc&limit=3&select=id,status,posted_count,failed_count,errors,target_group,owner_name,platform,media_url\" -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\")"
+      "Bash(curl -s \"https://socmedanalytics.com/api/pgrest/scheduled_posts?order=id.desc&limit=3&select=id,status,posted_count,failed_count,errors,target_group,owner_name,platform,media_url\" -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\")",
+      "Bash(curl -s -X PATCH \"https://socmedanalytics.com/api/pgrest/scheduled_posts?id=eq.6\" -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\" -H \"Content-Type: application/json\" -H \"Prefer: return=representation\" -d '{\"status\":\"pending\",\"posted_count\":0,\"failed_count\":0,\"errors\":null,\"fired_at\":null}')",
+      "Bash(curl -s \"https://socmedanalytics.com/api/pgrest/scheduled_posts?id=eq.6&select=status,posted_count,failed_count,errors\" -H \"apikey: sb_publishable__rqOgPSNIjXwtqbg-iYIfQ_MkzGF9ph\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

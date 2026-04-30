@@ -87,7 +87,11 @@ async function getTargetAccounts(
       [schedule.owner_name]
     ),
   ]);
-  // Slice by group
+  // "All" = semua akun owner (untuk member yang punya 1-2 akun saja)
+  if (schedule.target_group === "All") {
+    return { twitter: twR.rows, telegram: tgR.rows };
+  }
+  // Slice by group (admin: Post 1/2/3/Short → 45/45/45/15)
   const [start, count] = GROUP_SIZES[schedule.target_group] || [0, 45];
   return {
     twitter: twR.rows.slice(start, start + count),
