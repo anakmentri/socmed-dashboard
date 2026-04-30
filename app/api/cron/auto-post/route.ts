@@ -253,13 +253,8 @@ export async function GET(req: NextRequest) {
     [currentHourUtc, todayDateStr]
   );
 
-  if (sched.rows.length === 0) {
-    return NextResponse.json({
-      ok: true,
-      message: "No schedules due",
-      checked_hour_utc: currentHourUtc,
-    });
-  }
+  // Note: jangan return early kalau recurring kosong — masih ada scheduled_posts
+  // (one-time) yang harus di-check di section bawah.
 
   const results: Array<{
     schedule_id: number;
