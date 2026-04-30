@@ -271,13 +271,33 @@ export async function POST(req: NextRequest) {
           const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
           const fileName = isVideo ? `video.${ext}` : `photo.${ext}`;
 
-          if (isVideo) {
-            // ============ CHUNKED UPLOAD untuk video ============
-            const chunked = await uploadVideoChunked(accessToken, buf, mimeType);
-            if (chunked.media_id) {
-              mediaId = chunked.media_id;
+          if (isVideo && buf.length > 5 * 1024 * 1024) {
+            // Video > 5MB tidak bisa upload via OAuth 2.0
+            // (chunked upload v1.1 butuh OAuth 1.0a yang gak kita support)
+            const sizeMB = (buf.length / 1024 / 1024).toFixed(1);
+            mediaError = `Video terlalu besar (${sizeMB}MB). Twitter via OAuth 2.0 hanya support video MAX 5MB. Solusi: compress video dulu (handbrake/clipchamp), atau pakai Telegram (max 50MB).`;
+            // Skip uploadVideoChunked — gak akan jalan dgn OAuth 2.0
+            void uploadVideoChunked;
+          } else if (isVideo) {
+            // Video <= 5MB: try single-shot
+            const form = new FormData();
+            form.append(
+              "media",
+              new Blob([new Uint8Array(buf)], { type: mimeType }),
+              fileName
+            );
+            form.append("media_category", "tweet_video");
+
+            const upRes = await fetch("https://api.x.com/2/media/upload", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${accessToken}` },
+              body: form,
+            });
+            const upJson = await upRes.json().catch(() => ({}));
+            if (upRes.ok && (upJson.data?.id || upJson.media_id_string)) {
+              mediaId = upJson.data?.id || upJson.media_id_string || null;
             } else {
-              mediaError = `Video upload gagal: ${chunked.error || "unknown"}`;
+              mediaError = `Video upload gagal: HTTP ${upRes.status}`;
             }
           } else {
             // ============ SINGLE-SHOT untuk photo ============
