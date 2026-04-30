@@ -1800,27 +1800,55 @@ function AutoPostInner() {
                   </span>
                 ) : null}
               </div>
-              {scheduleMediaUrl && (
-                <div className="mt-2 rounded border border-bg-700 bg-bg-900 p-2">
-                  {scheduleMediaUrl.match(/\.(mp4|mov|webm)$/i) ? (
-                    <video
-                      src={scheduleMediaUrl}
-                      controls
-                      className="max-h-32 rounded"
-                    />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={scheduleMediaUrl}
-                      alt="preview"
-                      className="max-h-32 rounded"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.opacity = "0.3";
-                      }}
-                    />
-                  )}
-                </div>
-              )}
+              {scheduleMediaUrl && (() => {
+                const isDrive = scheduleMediaUrl.includes("drive.google.com");
+                const isDirectVideo = /\.(mp4|mov|webm)$/i.test(scheduleMediaUrl);
+                const isDirectImage = /\.(jpe?g|png|gif|webp)$/i.test(scheduleMediaUrl);
+                return (
+                  <div className="mt-2 rounded border border-bg-700 bg-bg-900 p-2">
+                    {isDirectVideo ? (
+                      <video
+                        src={scheduleMediaUrl}
+                        controls
+                        className="max-h-32 rounded"
+                      />
+                    ) : isDirectImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={scheduleMediaUrl}
+                        alt="preview"
+                        className="max-h-32 rounded"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : isDrive ? (
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="text-2xl">📁</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-fg-200">
+                            Google Drive Link
+                          </div>
+                          <div className="truncate text-fg-500">{scheduleMediaUrl}</div>
+                          <div className="mt-1 text-brand-amber">
+                            ⚠ Preview tidak ditampilkan (Drive block embed). Cron akan
+                            auto-convert ke direct download URL saat fire. Pastikan file
+                            di-share &quot;Anyone with link&quot;.
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-fg-400">
+                        🔗 URL: {scheduleMediaUrl}
+                        <div className="mt-1 text-brand-amber text-[10px]">
+                          ⚠ URL bukan direct file (gak ada .mp4/.jpg di akhir). Cron akan
+                          coba fetch saat fire — pastikan URL bisa di-download langsung.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             <div className="mt-3 flex items-center justify-end gap-2 border-t border-bg-700 pt-3">
               <button
@@ -1836,10 +1864,23 @@ function AutoPostInner() {
                 onClick={saveScheduledPost}
                 disabled={
                   scheduling ||
-                  !text.trim() ||
+                  (!text.trim() &&
+                    !mediaBase64 &&
+                    mediaList.length === 0 &&
+                    !scheduleMediaUrl.trim()) ||
                   !scheduleDateTime
                 }
                 className="rounded-lg bg-brand-amber px-4 py-1.5 text-xs font-bold text-bg-900 hover:opacity-90 disabled:opacity-40"
+                title={
+                  !text.trim() &&
+                  !mediaBase64 &&
+                  mediaList.length === 0 &&
+                  !scheduleMediaUrl.trim()
+                    ? "Wajib isi text content ATAU media (attach/URL)"
+                    : !scheduleDateTime
+                    ? "Pilih tanggal & jam dulu"
+                    : "Simpan schedule untuk fire otomatis"
+                }
               >
                 {scheduling ? "Menjadwalkan..." : "📅 Simpan Schedule"}
               </button>
