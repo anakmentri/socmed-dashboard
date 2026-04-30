@@ -61,6 +61,8 @@ function AutoPostInner() {
   const [tab, setTab] = useState<TabKey>("twitter");
   const [twConns, setTwConns] = useState<TwitterConn[]>([]);
   const [tgConns, setTgConns] = useState<TelegramConn[]>([]);
+  // Admin bot Telegram (global, dipakai sebagai storage untuk semua user — bypass Vercel 4.5MB)
+  const [storageBot, setStorageBot] = useState<TelegramConn | null>(null);
   const [twPosts, setTwPosts] = useState<TwitterPost[]>([]);
   const [tgPosts, setTgPosts] = useState<SocialPost[]>([]);
 
@@ -95,12 +97,16 @@ function AutoPostInner() {
     base64DataUri: string
   ): Promise<{ url: string | null; error?: string }> => {
     try {
-      // Cari admin Telegram bot sebagai host
-      const adminBot = tgConns.find((c) => c.owner_name === "admin") || tgConns[0];
+      // Pakai storage bot global (admin Telegram) sebagai host file
+      const adminBot =
+        storageBot ||
+        tgConns.find((c) => c.owner_name === "admin") ||
+        tgConns[0];
       if (!adminBot) {
         return {
           url: null,
-          error: "Tidak ada Telegram bot tersedia. Setup minimal 1 koneksi Telegram (admin) di tab Telegram dulu.",
+          error:
+            "File terlalu besar untuk upload langsung dan storage bot belum tersedia. Hubungi admin untuk setup Telegram storage bot, atau compress file ke <3MB.",
         };
       }
 
@@ -189,7 +195,7 @@ function AutoPostInner() {
   const myName = session?.memberName || (isAdmin ? "admin" : "");
 
   const load = async () => {
-    const [twC, tgC, twP, tgP] = await Promise.all([
+    const [twC, tgC, twP, tgP, storageC] = await Promise.all([
       isMember && myName
         ? supabase.from("twitter_connections").select("*").eq("owner_name", myName).order("id")
         : supabase.from("twitter_connections").select("*").order("id"),
@@ -207,12 +213,21 @@ function AutoPostInner() {
         .eq("platform", "Telegram")
         .order("created_at", { ascending: false })
         .limit(30),
+      // Always load admin Telegram bot (any role) — dipakai sebagai storage bot
+      // untuk upload file besar (bypass Vercel 4.5MB body limit).
+      supabase
+        .from("telegram_connections")
+        .select("*")
+        .eq("owner_name", "admin")
+        .order("id")
+        .limit(1),
     ]);
     setTwConns((twC.data as TwitterConn[]) || []);
     setTgConns((tgC.data as TelegramConn[]) || []);
     setTwPosts((twP.data as TwitterPost[]) || []);
     setTgPosts((tgP.data as SocialPost[]) || []);
-
+    const sBot = (storageC.data as TelegramConn[])?.[0] || null;
+    setStorageBot(sBot);
   };
 
   // Toast handlers for OAuth callback (only run once on mount)
@@ -680,6 +695,28 @@ function AutoPostInner() {
     )
       return;
 
+    // Untuk Twitter: kalau media > 3MB, auto-host ke storage dulu agar request body
+    // tidak melebihi Vercel 4.5MB cap. Telegram bulk pakai direct upload, gak perlu.
+    let twitterMediaUrl: string | null = null;
+    if (tab === "twitter" && mediaBase64) {
+      const sizeBytes = mediaBase64.length * 0.75;
+      if (sizeBytes > 3 * 1024 * 1024) {
+        const sizeMB = (sizeBytes / 1024 / 1024).toFixed(1);
+        if (
+          !confirm(
+            `Media ${sizeMB}MB terlalu besar untuk dikirim langsung. File akan di-host ke storage internal dulu, lalu URL dipakai untuk semua post. Lanjut?`
+          )
+        )
+          return;
+        const hostRes = await uploadFileToTelegramHost(mediaBase64);
+        if (!hostRes.url) {
+          return toast(`Upload media gagal: ${hostRes.error}`, true);
+        }
+        twitterMediaUrl = hostRes.url;
+        toast(`✅ Media ter-upload, mulai bulk post...`);
+      }
+    }
+
     setBulkPosting({
       group: group.name,
       done: 0,
@@ -717,7 +754,9 @@ function AutoPostInner() {
               owner: (conn as TwitterConn).owner_name,
               posted_by: myName,
               connection_id: conn.id,
-              media_base64: mediaBase64 || undefined,
+              // Pakai URL kalau media besar (sudah di-host di storage), atau base64 kalau kecil
+              media_url: twitterMediaUrl || undefined,
+              media_base64: !twitterMediaUrl && mediaBase64 ? mediaBase64 : undefined,
               post_group: group.name,
             }),
           });
@@ -847,22 +886,22 @@ function AutoPostInner() {
         // Kecil — base64 langsung OK
         mediaB64 = candidateAttachment;
       } else {
-        // Besar — auto-upload ke Telegram bot biar dapat URL (bypass Vercel)
+        // Besar — auto-upload ke storage bot (admin Telegram), dapat URL (bypass Vercel)
         const sizeMB = (sizeBytes / 1024 / 1024).toFixed(1);
         if (
           !confirm(
-            `Media attachment ${sizeMB}MB terlalu besar untuk save langsung. Auto-upload ke Telegram bot kamu (sebagai storage)? URL hasilnya akan dipakai di schedule.`
+            `Media ${sizeMB}MB terlalu besar untuk disimpan langsung. File akan di-host ke storage bot (file tidak ke-share publik). URL hasilnya dipakai saat fire schedule. Lanjut?`
           )
         )
           return;
-        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke Telegram bot...`);
+        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke storage...`);
         const uploadResult = await uploadFileToTelegramHost(candidateAttachment);
         setScheduleUploadProgress("");
         if (!uploadResult.url) {
           return toast(`Upload gagal: ${uploadResult.error || "unknown"}`, true);
         }
         mediaUrl = uploadResult.url;
-        toast(`✅ Media ter-upload ke Telegram bot. URL siap dipakai schedule.`);
+        toast(`✅ Media ter-upload ke storage. URL siap dipakai schedule.`);
       }
     }
 
@@ -1935,7 +1974,7 @@ function AutoPostInner() {
                       const reader = new FileReader();
                       reader.onload = async () => {
                         const dataUri = reader.result as string;
-                        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke Telegram bot...`);
+                        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke storage...`);
                         const res = await uploadFileToTelegramHost(dataUri);
                         setScheduleUploadProgress("");
                         if (!res.url) {
@@ -1963,7 +2002,7 @@ function AutoPostInner() {
                   </button>
                 )}
                 <span className="text-[10px] text-fg-500">
-                  Max ~50MB (Telegram bot API). Auto-host ke bot admin, tidak butuh website lain.
+                  Max ~50MB. File auto-host ke storage internal, tidak butuh website lain.
                 </span>
               </div>
               {mediaBase64 || mediaList.length > 0 ? (
