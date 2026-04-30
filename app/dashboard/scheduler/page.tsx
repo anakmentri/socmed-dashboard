@@ -13,6 +13,7 @@ type ContentItem = {
   name: string;
   text_content: string;
   media_base64: string | null;
+  media_url: string | null;
   tags: string[] | null;
   active: boolean;
   used_count: number;
@@ -118,6 +119,7 @@ export default function SchedulerPage() {
       name: d.name.trim(),
       text_content: d.text_content.trim(),
       media_base64: d.media_base64 || null,
+      media_url: d.media_url?.trim() || null,
       active: d.active !== false,
       created_by: session?.memberName || session?.username,
     };
@@ -145,26 +147,21 @@ export default function SchedulerPage() {
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Limit per type: 20MB foto, 200MB video (sama dengan asset library + autopost)
-    const isVideo = file.type.startsWith("video");
-    const maxSize = isVideo ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
-    const maxLabel = isVideo ? "200MB" : "20MB";
-    if (file.size > maxSize) {
-      return toast(`File terlalu besar. Max ${maxLabel} untuk ${isVideo ? "video" : "foto"}`, true);
-    }
-    // Warning untuk file > 5MB (Twitter photo limit 5MB, video 512MB)
-    const mb = (file.size / 1024 / 1024).toFixed(1);
-    if (!isVideo && file.size > 5 * 1024 * 1024) {
-      toast(`⚠ Foto ${mb}MB > 5MB — mungkin ditolak Twitter. Tetap di-upload.`);
-    }
-    if (isVideo && file.size > 50 * 1024 * 1024) {
-      toast(`⚠ Video ${mb}MB > 50MB — Telegram bot mungkin tolak (compress dulu kalau gagal)`);
+    // Vercel Hobby plan hard limit body 4.5MB. Untuk media lebih besar,
+    // user harus pakai field 'Media URL' (link eksternal).
+    const HARD_LIMIT = 4 * 1024 * 1024; // 4MB safe under 4.5MB Vercel limit
+    if (file.size > HARD_LIMIT) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      return toast(
+        `File ${mb}MB terlalu besar. Max 4MB untuk upload langsung. Untuk file lebih besar, upload ke imgbb.com atau imgur.com lalu paste URL-nya di field 'Media URL'.`,
+        true
+      );
     }
     const reader = new FileReader();
     reader.onload = () => {
       setLibModal((m) => ({
         ...m,
-        data: { ...m.data, media_base64: String(reader.result || "") },
+        data: { ...m.data, media_base64: String(reader.result || ""), media_url: "" },
       }));
     };
     reader.readAsDataURL(file);
@@ -450,12 +447,31 @@ export default function SchedulerPage() {
                       x{c.used_count}
                     </span>
                   </div>
-                  {c.media_base64 && (
-                    <img
-                      src={c.media_base64}
-                      alt=""
-                      className="mb-2 max-h-32 w-full rounded object-cover"
-                    />
+                  {(c.media_base64 || c.media_url) && (
+                    <div className="mb-2 relative">
+                      {(() => {
+                        const src = c.media_base64 || c.media_url || "";
+                        const isVideo = src.startsWith("data:video") || /\.(mp4|mov|webm)$/i.test(src);
+                        return isVideo ? (
+                          <video src={src} className="max-h-32 w-full rounded object-cover" muted />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={src}
+                            alt=""
+                            className="max-h-32 w-full rounded object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.opacity = "0.3";
+                            }}
+                          />
+                        );
+                      })()}
+                      {c.media_url && !c.media_base64 && (
+                        <span className="absolute top-1 right-1 rounded bg-bg-900/80 px-1 py-0.5 text-[8px] text-brand-sky">
+                          🔗 URL
+                        </span>
+                      )}
+                    </div>
                   )}
                   <p className="mb-2 line-clamp-3 text-xs text-fg-300 whitespace-pre-wrap">
                     {c.text_content}
@@ -616,17 +632,15 @@ export default function SchedulerPage() {
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
             Media (opsional)
             <span className="ml-2 normal-case text-fg-500 font-normal">
-              foto max 20MB · video max 200MB
+              upload max 4MB ATAU paste URL untuk file besar
             </span>
           </label>
+
+          {/* Option 1: Upload langsung (max 4MB karena Vercel Hobby limit) */}
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-bg-700 bg-bg-900 p-4 hover:border-brand-sky">
             {libModal.data.media_base64 ? (
               libModal.data.media_base64.startsWith("data:video") ? (
-                <video
-                  src={libModal.data.media_base64}
-                  controls
-                  className="max-h-48 rounded"
-                />
+                <video src={libModal.data.media_base64} controls className="max-h-48 rounded" />
               ) : (
                 <img src={libModal.data.media_base64} alt="" className="max-h-48 rounded" />
               )
@@ -635,7 +649,8 @@ export default function SchedulerPage() {
                 <div className="text-2xl mb-1">📷</div>
                 <div className="text-xs text-fg-500">Klik upload foto/video</div>
                 <div className="text-[10px] text-fg-600 mt-1">
-                  Foto: PNG, JPG, GIF (max 20MB) · Video: MP4, MOV (max 200MB)
+                  Limit upload: <strong>4MB</strong> (Vercel Hobby plan).
+                  <br />Untuk file lebih besar → pakai Media URL di bawah.
                 </div>
               </div>
             )}
@@ -658,10 +673,66 @@ export default function SchedulerPage() {
                 }
                 className="text-[10px] text-brand-rose hover:underline"
               >
-                ✕ Hapus media
+                ✕ Hapus upload
               </button>
             </div>
           )}
+
+          {/* Option 2: Media URL (untuk file besar / video panjang) */}
+          <div className="mt-3">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-fg-400">
+              ATAU Media URL (untuk file lebih dari 4MB)
+            </label>
+            <input
+              className={inputCls}
+              placeholder="https://i.imgur.com/abc.jpg atau direct link foto/video lain"
+              value={libModal.data.media_url || ""}
+              onChange={(e) =>
+                setLibModal((m) => ({
+                  ...m,
+                  data: { ...m.data, media_url: e.target.value, media_base64: "" },
+                }))
+              }
+            />
+            <div className="mt-1 text-[10px] text-fg-500">
+              💡 Upload file besar ke{" "}
+              <a
+                href="https://imgbb.com"
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-sky hover:underline"
+              >
+                imgbb.com
+              </a>
+              ,{" "}
+              <a
+                href="https://imgur.com"
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-sky hover:underline"
+              >
+                imgur.com
+              </a>
+              , atau Telegram channel public → copy <strong>direct image URL</strong> → paste di sini.
+            </div>
+            {libModal.data.media_url && (
+              <div className="mt-2 rounded border border-bg-700 bg-bg-900 p-2">
+                {libModal.data.media_url.match(/\.(mp4|mov|webm)$/i) ? (
+                  <video src={libModal.data.media_url} controls className="max-h-32 rounded" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={libModal.data.media_url}
+                    alt="preview"
+                    className="max-h-32 rounded"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-bg-700 pt-4">
           <button

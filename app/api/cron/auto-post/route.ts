@@ -15,6 +15,7 @@ type ContentItem = {
   name: string;
   text_content: string;
   media_base64: string | null;
+  media_url: string | null;
 };
 
 type Schedule = {
@@ -58,14 +59,13 @@ async function pickContent(
 ): Promise<ContentItem | null> {
   if (schedule.content_mode === "specific" && schedule.specific_content_id) {
     const r = await pool.query(
-      `SELECT id, name, text_content, media_base64 FROM ${SCHEMA}.content_library WHERE id = $1 AND active = true`,
+      `SELECT id, name, text_content, media_base64, media_url FROM ${SCHEMA}.content_library WHERE id = $1 AND active = true`,
       [schedule.specific_content_id]
     );
     return r.rows[0] || null;
   }
-  // Random / sequential — for now random with low used_count weight
   const r = await pool.query(
-    `SELECT id, name, text_content, media_base64 FROM ${SCHEMA}.content_library
+    `SELECT id, name, text_content, media_base64, media_url FROM ${SCHEMA}.content_library
      WHERE active = true
      ORDER BY used_count ASC, RANDOM()
      LIMIT 1`
@@ -95,12 +95,31 @@ async function getTargetAccounts(
   };
 }
 
+// Fetch external URL → convert ke base64 data URI (untuk media_url support)
+async function fetchUrlAsBase64(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") || "image/jpeg";
+    const buf = Buffer.from(await res.arrayBuffer());
+    return `data:${ct};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 async function postToTwitter(
   conn: TwitterConn,
   content: ContentItem,
   postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    // Resolve media: prefer base64 (sudah inline), fallback fetch dari URL
+    let mediaBase64 = content.media_base64;
+    if (!mediaBase64 && content.media_url) {
+      mediaBase64 = await fetchUrlAsBase64(content.media_url);
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
     const res = await fetch(`${baseUrl}/api/twitter/tweet`, {
       method: "POST",
@@ -110,7 +129,7 @@ async function postToTwitter(
         owner: conn.owner_name,
         posted_by: "auto-cron",
         connection_id: conn.id,
-        media_base64: content.media_base64 || undefined,
+        media_base64: mediaBase64 || undefined,
         post_group: postGroup,
       }),
     });
@@ -129,6 +148,12 @@ async function postToTelegram(
   postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    // Resolve media: prefer base64, fallback fetch URL
+    let mediaBase64 = content.media_base64;
+    if (!mediaBase64 && content.media_url) {
+      mediaBase64 = await fetchUrlAsBase64(content.media_url);
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
     const body: Record<string, unknown> = {
       connection_id: conn.id,
@@ -136,10 +161,9 @@ async function postToTelegram(
       posted_by: "auto-cron",
       post_group: postGroup,
     };
-    if (content.media_base64) {
-      // Determine media type from base64 prefix
-      const isVideo = content.media_base64.startsWith("data:video");
-      body.media_base64 = content.media_base64;
+    if (mediaBase64) {
+      const isVideo = mediaBase64.startsWith("data:video");
+      body.media_base64 = mediaBase64;
       body.media_type = isVideo ? "video" : "photo";
     }
     const res = await fetch(`${baseUrl}/api/telegram/send`, {
