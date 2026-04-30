@@ -95,16 +95,58 @@ async function getTargetAccounts(
   };
 }
 
-// Fetch external URL → convert ke base64 data URI (untuk media_url support)
-async function fetchUrlAsBase64(url: string): Promise<string | null> {
+// Convert sharing URL ke direct download URL untuk service yang umum
+function normalizeMediaUrl(url: string): string {
+  // Google Drive: /file/d/{ID} → uc?export=download&id={ID}
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+  if (driveMatch) {
+    return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+  }
+  // Google Drive open?id= → uc?id=
+  const driveOpen = url.match(/drive\.google\.com\/open\?id=([\w-]+)/);
+  if (driveOpen) {
+    return `https://drive.google.com/uc?export=download&id=${driveOpen[1]}`;
+  }
+  // Dropbox: ?dl=0 → ?dl=1
+  if (url.includes("dropbox.com") && url.includes("dl=0")) {
+    return url.replace("dl=0", "dl=1");
+  }
+  return url;
+}
+
+// Fetch external URL → convert ke base64 data URI
+// Return null kalau fetch fail atau content bukan image/video
+async function fetchUrlAsBase64(
+  rawUrl: string
+): Promise<{ base64: string | null; error: string | null }> {
+  const url = normalizeMediaUrl(rawUrl);
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "image/jpeg";
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(30000),
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      return { base64: null, error: `Fetch URL gagal: HTTP ${res.status}` };
+    }
+    const ct = res.headers.get("content-type") || "";
+    // Validate content-type: harus image/* atau video/*
+    if (!ct.startsWith("image/") && !ct.startsWith("video/")) {
+      return {
+        base64: null,
+        error: `URL bukan file media (content-type: ${ct.slice(0, 50)}). Pastikan URL adalah direct download link, bukan halaman web.`,
+      };
+    }
     const buf = Buffer.from(await res.arrayBuffer());
-    return `data:${ct};base64,${buf.toString("base64")}`;
-  } catch {
-    return null;
+    if (buf.length === 0) {
+      return { base64: null, error: "File kosong dari URL" };
+    }
+    return {
+      base64: `data:${ct};base64,${buf.toString("base64")}`,
+      error: null,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "fetch error";
+    return { base64: null, error: `Fetch error: ${msg.slice(0, 100)}` };
   }
 }
 
@@ -114,10 +156,17 @@ async function postToTwitter(
   postGroup: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Resolve media: prefer base64 (sudah inline), fallback fetch dari URL
-    let mediaBase64 = content.media_base64;
+    // Resolve media: prefer base64 inline, fallback fetch dari URL
+    let mediaBase64: string | null = content.media_base64;
+    let mediaWarning = "";
     if (!mediaBase64 && content.media_url) {
-      mediaBase64 = await fetchUrlAsBase64(content.media_url);
+      const fetched = await fetchUrlAsBase64(content.media_url);
+      if (fetched.base64) {
+        mediaBase64 = fetched.base64;
+      } else {
+        // Media URL fetch gagal — tetep post text-only, kasih warning
+        mediaWarning = ` (media skip: ${fetched.error})`;
+      }
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
@@ -134,9 +183,10 @@ async function postToTwitter(
       }),
     });
     const j = await res.json();
-    return res.ok
-      ? { ok: true }
-      : { ok: false, error: j.error || `HTTP ${res.status}` };
+    if (res.ok) {
+      return mediaWarning ? { ok: true, error: mediaWarning } : { ok: true };
+    }
+    return { ok: false, error: (j.error || `HTTP ${res.status}`) + mediaWarning };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "exception" };
   }
@@ -149,9 +199,10 @@ async function postToTelegram(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     // Resolve media: prefer base64, fallback fetch URL
-    let mediaBase64 = content.media_base64;
+    let mediaBase64: string | null = content.media_base64;
     if (!mediaBase64 && content.media_url) {
-      mediaBase64 = await fetchUrlAsBase64(content.media_url);
+      const fetched = await fetchUrlAsBase64(content.media_url);
+      mediaBase64 = fetched.base64;
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
