@@ -1486,22 +1486,40 @@ function AutoPostInner() {
               </span>
             </div>
             {isMember ? (
-              // Member view: 1 tombol "Post ke Semua Akun Saya"
-              <button
-                onClick={() => {
-                  const grp = {
-                    name: "All",
-                    size: availConns.length,
-                    accounts: availConns,
-                  };
-                  bulkPost(grp);
-                }}
-                disabled={posting || !!bulkPosting}
-                className="w-full rounded-lg border-2 border-bg-700 bg-bg-800 px-4 py-3 text-sm font-bold text-fg-100 transition hover:border-current disabled:opacity-40"
-                style={{ color: currentPlatform.color }}
-              >
-                🚀 Post ke Semua Akun Saya ({availConns.length} {tab === "twitter" ? "Twitter" : "Telegram"})
-              </button>
+              // Member view: 2 tombol — Post Sekarang + Jadwalkan
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => {
+                    const grp = {
+                      name: "All",
+                      size: availConns.length,
+                      accounts: availConns,
+                    };
+                    bulkPost(grp);
+                  }}
+                  disabled={posting || !!bulkPosting || scheduleMode}
+                  className="rounded-lg border-2 border-bg-700 bg-bg-800 px-4 py-3 text-sm font-bold text-fg-100 transition hover:border-current disabled:opacity-40"
+                  style={{ color: currentPlatform.color }}
+                  title="Kirim sekarang juga ke semua akun"
+                >
+                  🚀 Post Sekarang ({availConns.length} {tab === "twitter" ? "Twitter" : "Telegram"})
+                </button>
+                <button
+                  onClick={() => {
+                    setScheduleMode(true);
+                    // Scroll ke schedule form setelah render
+                    setTimeout(() => {
+                      const el = document.querySelector('[data-schedule-form]');
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }, 100);
+                  }}
+                  disabled={posting || !!bulkPosting}
+                  className="rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-bold text-brand-amber transition hover:bg-amber-500/20 disabled:opacity-40"
+                  title="Jadwalkan post untuk fire otomatis pada tanggal & jam tertentu"
+                >
+                  📅 Jadwalkan Tanggal & Jam
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {buildGroups(availConns).map((g) => {
@@ -1844,7 +1862,7 @@ function AutoPostInner() {
 
         {/* Schedule form (toggle ON) */}
         {scheduleMode && (
-          <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+          <div data-schedule-form className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
             <div className="mb-2 flex items-center gap-2">
               <span className="text-sm font-bold text-brand-amber">
                 📅 Jadwalkan Bulk Post
