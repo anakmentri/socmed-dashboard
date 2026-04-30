@@ -145,7 +145,21 @@ export default function SchedulerPage() {
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return toast("Max 5MB", true);
+    // Limit per type: 20MB foto, 200MB video (sama dengan asset library + autopost)
+    const isVideo = file.type.startsWith("video");
+    const maxSize = isVideo ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
+    const maxLabel = isVideo ? "200MB" : "20MB";
+    if (file.size > maxSize) {
+      return toast(`File terlalu besar. Max ${maxLabel} untuk ${isVideo ? "video" : "foto"}`, true);
+    }
+    // Warning untuk file > 5MB (Twitter photo limit 5MB, video 512MB)
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    if (!isVideo && file.size > 5 * 1024 * 1024) {
+      toast(`⚠ Foto ${mb}MB > 5MB — mungkin ditolak Twitter. Tetap di-upload.`);
+    }
+    if (isVideo && file.size > 50 * 1024 * 1024) {
+      toast(`⚠ Video ${mb}MB > 50MB — Telegram bot mungkin tolak (compress dulu kalau gagal)`);
+    }
     const reader = new FileReader();
     reader.onload = () => {
       setLibModal((m) => ({
@@ -600,25 +614,53 @@ export default function SchedulerPage() {
         </div>
         <div className="mb-4">
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-300">
-            Media (opsional, max 5MB)
+            Media (opsional)
+            <span className="ml-2 normal-case text-fg-500 font-normal">
+              foto max 20MB · video max 200MB
+            </span>
           </label>
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-bg-700 bg-bg-900 p-4 hover:border-brand-sky">
             {libModal.data.media_base64 ? (
-              <img src={libModal.data.media_base64} alt="" className="max-h-40 rounded" />
+              libModal.data.media_base64.startsWith("data:video") ? (
+                <video
+                  src={libModal.data.media_base64}
+                  controls
+                  className="max-h-48 rounded"
+                />
+              ) : (
+                <img src={libModal.data.media_base64} alt="" className="max-h-48 rounded" />
+              )
             ) : (
-              <span className="text-xs text-fg-500">📷 Klik upload media</span>
+              <div className="text-center">
+                <div className="text-2xl mb-1">📷</div>
+                <div className="text-xs text-fg-500">Klik upload foto/video</div>
+                <div className="text-[10px] text-fg-600 mt-1">
+                  Foto: PNG, JPG, GIF (max 20MB) · Video: MP4, MOV (max 200MB)
+                </div>
+              </div>
             )}
-            <input type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaUpload} />
+            <input
+              type="file"
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={handleMediaUpload}
+            />
           </label>
           {libModal.data.media_base64 && (
-            <button
-              onClick={() =>
-                setLibModal((m) => ({ ...m, data: { ...m.data, media_base64: "" } }))
-              }
-              className="mt-1 text-[10px] text-brand-rose hover:underline"
-            >
-              ✕ Hapus media
-            </button>
+            <div className="mt-1 flex items-center gap-3">
+              <span className="text-[10px] text-fg-500">
+                Size: {((libModal.data.media_base64.length * 0.75) / 1024 / 1024).toFixed(1)}MB
+                {libModal.data.media_base64.startsWith("data:video") && " · 🎬 Video"}
+              </span>
+              <button
+                onClick={() =>
+                  setLibModal((m) => ({ ...m, data: { ...m.data, media_base64: "" } }))
+                }
+                className="text-[10px] text-brand-rose hover:underline"
+              >
+                ✕ Hapus media
+              </button>
+            </div>
           )}
         </div>
         <div className="flex justify-end gap-2 border-t border-bg-700 pt-4">
