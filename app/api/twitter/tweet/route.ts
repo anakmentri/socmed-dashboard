@@ -22,7 +22,8 @@ async function uploadVideoChunked(
   mimeType: string
 ): Promise<{ media_id: string | null; error?: string }> {
   const totalBytes = buf.length;
-  const baseUrl = "https://api.x.com/2/media/upload";
+  // v1.1 endpoint — masih support chunked upload via OAuth 2.0 Bearer
+  const baseUrl = "https://upload.twitter.com/1.1/media/upload.json";
 
   // ============ INIT ============
   // Twitter v2: command di query, params lain di form-data body
