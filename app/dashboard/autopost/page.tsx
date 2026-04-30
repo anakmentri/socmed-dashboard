@@ -84,6 +84,7 @@ function AutoPostInner() {
   const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState(""); // local datetime-local string
   const [scheduleGroup, setScheduleGroup] = useState<string>("Post 1");
+  const [scheduleMediaUrl, setScheduleMediaUrl] = useState(""); // alternatif untuk file > 4MB
   const [scheduling, setScheduling] = useState(false);
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
@@ -738,7 +739,8 @@ function AutoPostInner() {
 
   // Save scheduled post (akan fire pas waktu yg di-set)
   const saveScheduledPost = async () => {
-    const hasMedia = mediaBase64 || mediaList.length > 0;
+    const hasMedia =
+      mediaBase64 || mediaList.length > 0 || scheduleMediaUrl.trim();
     if (!text.trim() && !hasMedia) return toast("Text atau media wajib", true);
     if (!scheduleDateTime) return toast("Pilih tanggal & jam dulu", true);
 
@@ -747,6 +749,25 @@ function AutoPostInner() {
     if (isNaN(scheduledAt.getTime())) return toast("Tanggal/jam invalid", true);
     if (scheduledAt.getTime() < Date.now())
       return toast("Tanggal/jam sudah lewat — pilih waktu yang akan datang", true);
+
+    // Decide media: prioritize URL (no body limit), else base64 (must < 3MB safe)
+    const mediaUrl = scheduleMediaUrl.trim() || null;
+    let mediaB64: string | null = null;
+    if (!mediaUrl) {
+      // Pakai base64 dari compose attachment, kalau ada
+      const candidate = mediaBase64 || mediaList[0]?.base64 || null;
+      if (candidate) {
+        // Estimate base64 size in bytes (rough)
+        const sizeBytes = candidate.length * 0.75;
+        if (sizeBytes > 3 * 1024 * 1024) {
+          return toast(
+            `Media attachment (${(sizeBytes / 1024 / 1024).toFixed(1)}MB) terlalu besar untuk schedule. Max 3MB. Untuk file lebih besar, paste URL di field 'Media URL' di bawah.`,
+            true
+          );
+        }
+        mediaB64 = candidate;
+      }
+    }
 
     if (!confirm(
       `Schedule post ke ${scheduleGroup} (${owner}) pada\n${scheduledAt.toLocaleString("id-ID")}?`
@@ -759,7 +780,8 @@ function AutoPostInner() {
         owner_name: owner,
         target_group: scheduleGroup,
         text_content: text,
-        media_base64: mediaBase64 || (mediaList[0]?.base64 ?? null),
+        media_base64: mediaB64,
+        media_url: mediaUrl,
         scheduled_at: scheduledAt.toISOString(),
         status: "pending",
         created_by: myName,
@@ -778,6 +800,7 @@ function AutoPostInner() {
         setText("");
         clearMedia();
         setScheduleDateTime("");
+        setScheduleMediaUrl("");
         setScheduleMode(false);
         loadScheduledPosts();
       }
@@ -1737,6 +1760,67 @@ function AutoPostInner() {
                   onChange={(e) => setScheduleDateTime(e.target.value)}
                 />
               </div>
+            </div>
+
+            {/* Media URL (alternatif untuk file > 4MB) */}
+            <div className="mt-3">
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">
+                Media URL (untuk video/foto besar &gt; 4MB)
+              </label>
+              <input
+                type="url"
+                className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
+                placeholder="https://files.catbox.moe/abc.mp4 atau https://i.ibb.co/xxx/foto.jpg"
+                value={scheduleMediaUrl}
+                onChange={(e) => setScheduleMediaUrl(e.target.value)}
+              />
+              <div className="mt-1 text-[10px] text-fg-500">
+                💡 Upload file besar ke{" "}
+                <a
+                  href="https://catbox.moe"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-sky hover:underline"
+                >
+                  catbox.moe
+                </a>{" "}
+                (max 200MB, no signup) atau{" "}
+                <a
+                  href="https://imgbb.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-sky hover:underline"
+                >
+                  imgbb.com
+                </a>{" "}
+                → paste direct URL di sini.{" "}
+                {mediaBase64 || mediaList.length > 0 ? (
+                  <span className="text-brand-amber">
+                    ⚠ Kalau ini diisi, attachment di atas (Attach Media) di-skip.
+                  </span>
+                ) : null}
+              </div>
+              {scheduleMediaUrl && (
+                <div className="mt-2 rounded border border-bg-700 bg-bg-900 p-2">
+                  {scheduleMediaUrl.match(/\.(mp4|mov|webm)$/i) ? (
+                    <video
+                      src={scheduleMediaUrl}
+                      controls
+                      className="max-h-32 rounded"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={scheduleMediaUrl}
+                      alt="preview"
+                      className="max-h-32 rounded"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.opacity = "0.3";
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
             <div className="mt-3 flex items-center justify-end gap-2 border-t border-bg-700 pt-3">
               <button
