@@ -85,7 +85,90 @@ function AutoPostInner() {
   const [scheduleDateTime, setScheduleDateTime] = useState(""); // local datetime-local string
   const [scheduleGroup, setScheduleGroup] = useState<string>("Post 1");
   const [scheduleMediaUrl, setScheduleMediaUrl] = useState(""); // alternatif untuk file > 4MB
+  const [scheduleUploadProgress, setScheduleUploadProgress] = useState<string>("");
   const [scheduling, setScheduling] = useState(false);
+
+  // Helper: upload file ke admin Telegram bot, return public URL
+  // Ini bypass Vercel body limit (browser direct ke Telegram), file di-host
+  // di Telegram CDN, URL bisa di-fetch oleh Twitter/Telegram lain.
+  const uploadFileToTelegramHost = async (
+    base64DataUri: string
+  ): Promise<{ url: string | null; error?: string }> => {
+    try {
+      // Cari admin Telegram bot sebagai host
+      const adminBot = tgConns.find((c) => c.owner_name === "admin") || tgConns[0];
+      if (!adminBot) {
+        return {
+          url: null,
+          error: "Tidak ada Telegram bot tersedia. Setup minimal 1 koneksi Telegram (admin) di tab Telegram dulu.",
+        };
+      }
+
+      const mimeMatch = base64DataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!mimeMatch) return { url: null, error: "Format base64 tidak valid" };
+      const [, mime, b64] = mimeMatch;
+      const isVideo = mime.startsWith("video");
+      const ext = mime.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
+
+      // Decode base64 ke binary
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const blob = new Blob([arr], { type: mime });
+
+      // Upload ke Telegram bot (direct dari browser, bypass Vercel)
+      const endpoint = isVideo ? "sendVideo" : "sendPhoto";
+      const fieldName = isVideo ? "video" : "photo";
+      const fd = new FormData();
+      fd.append("chat_id", adminBot.chat_id);
+      fd.append(fieldName, blob, `media.${ext}`);
+      if (isVideo) fd.append("supports_streaming", "true");
+      fd.append("caption", "📦 [Storage] Auto-upload dari dashboard scheduler");
+
+      const sendRes = await fetch(
+        `https://api.telegram.org/bot${adminBot.bot_token}/${endpoint}`,
+        { method: "POST", body: fd }
+      );
+      const sendJson = await sendRes.json();
+      if (!sendJson.ok) {
+        return {
+          url: null,
+          error: `Telegram upload gagal: ${sendJson.description || "unknown"}`,
+        };
+      }
+
+      // Extract file_id
+      const r = sendJson.result;
+      let fileId: string | undefined;
+      if (isVideo) {
+        fileId = r.video?.file_id || r.document?.file_id;
+      } else {
+        const photos = r.photo || [];
+        fileId = photos[photos.length - 1]?.file_id;
+      }
+      if (!fileId) return { url: null, error: "No file_id dari Telegram response" };
+
+      // Get file path via getFile
+      const getFileRes = await fetch(
+        `https://api.telegram.org/bot${adminBot.bot_token}/getFile?file_id=${fileId}`
+      );
+      const getFileJson = await getFileRes.json();
+      if (!getFileJson.ok) {
+        return {
+          url: null,
+          error: `getFile gagal: ${getFileJson.description || "unknown"}`,
+        };
+      }
+      const filePath = getFileJson.result.file_path;
+      const url = `https://api.telegram.org/file/bot${adminBot.bot_token}/${filePath}`;
+      return { url };
+    } catch (e) {
+      return {
+        url: null,
+        error: e instanceof Error ? e.message : "exception",
+      };
+    }
+  };
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [mediaBase64, setMediaBase64] = useState<string>(""); // legacy: 1 file (Twitter)
@@ -750,22 +833,36 @@ function AutoPostInner() {
     if (scheduledAt.getTime() < Date.now())
       return toast("Tanggal/jam sudah lewat — pilih waktu yang akan datang", true);
 
-    // Decide media: prioritize URL (no body limit), else base64 (must < 3MB safe)
-    const mediaUrl = scheduleMediaUrl.trim() || null;
+    // Resolve media: 3 jalur
+    // 1. User paste URL → pakai itu langsung
+    // 2. User attach file kecil (< 3MB) → save base64 langsung
+    // 3. User attach file besar → auto-upload ke Telegram bot, dapat URL
+    let mediaUrl = scheduleMediaUrl.trim() || null;
     let mediaB64: string | null = null;
-    if (!mediaUrl) {
-      // Pakai base64 dari compose attachment, kalau ada
-      const candidate = mediaBase64 || mediaList[0]?.base64 || null;
-      if (candidate) {
-        // Estimate base64 size in bytes (rough)
-        const sizeBytes = candidate.length * 0.75;
-        if (sizeBytes > 3 * 1024 * 1024) {
-          return toast(
-            `Media attachment (${(sizeBytes / 1024 / 1024).toFixed(1)}MB) terlalu besar untuk schedule. Max 3MB. Untuk file lebih besar, paste URL di field 'Media URL' di bawah.`,
-            true
-          );
+    const candidateAttachment = mediaBase64 || mediaList[0]?.base64 || null;
+
+    if (!mediaUrl && candidateAttachment) {
+      const sizeBytes = candidateAttachment.length * 0.75;
+      if (sizeBytes <= 3 * 1024 * 1024) {
+        // Kecil — base64 langsung OK
+        mediaB64 = candidateAttachment;
+      } else {
+        // Besar — auto-upload ke Telegram bot biar dapat URL (bypass Vercel)
+        const sizeMB = (sizeBytes / 1024 / 1024).toFixed(1);
+        if (
+          !confirm(
+            `Media attachment ${sizeMB}MB terlalu besar untuk save langsung. Auto-upload ke Telegram bot kamu (sebagai storage)? URL hasilnya akan dipakai di schedule.`
+          )
+        )
+          return;
+        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke Telegram bot...`);
+        const uploadResult = await uploadFileToTelegramHost(candidateAttachment);
+        setScheduleUploadProgress("");
+        if (!uploadResult.url) {
+          return toast(`Upload gagal: ${uploadResult.error || "unknown"}`, true);
         }
-        mediaB64 = candidate;
+        mediaUrl = uploadResult.url;
+        toast(`✅ Media ter-upload ke Telegram bot. URL siap dipakai schedule.`);
       }
     }
 
@@ -1850,6 +1947,11 @@ function AutoPostInner() {
                 );
               })()}
             </div>
+            {scheduleUploadProgress && (
+              <div className="mt-3 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-xs text-brand-amber">
+                ⏳ {scheduleUploadProgress}
+              </div>
+            )}
             <div className="mt-3 flex items-center justify-end gap-2 border-t border-bg-700 pt-3">
               <button
                 onClick={() => {
