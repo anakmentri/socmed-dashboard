@@ -183,7 +183,8 @@
       "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Size: %{size_download} bytes | Type: %{content_type}\\\\n\" -L \"https://filesamples.com/samples/video/mp4/sample_640x360.mp4\")",
       "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Size: %{size_download} bytes | Type: %{content_type}\\\\n\" -L \"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\")",
       "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test small video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://filesamples.com/samples/video/mp4/sample_640x360.mp4\",\"posted_by\":\"test\"}')",
-      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test medium video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\",\"posted_by\":\"test\"}')"
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test medium video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\",\"posted_by\":\"test\"}')",
+      "Bash(curl -s -X POST https://socmedanalytics.com/api/twitter/tweet -H 'Content-Type: application/json' -d '{\"text\":\"test chunked video\",\"connection_id\":1,\"owner\":\"admin\",\"media_url\":\"https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4\",\"posted_by\":\"test\"}')"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

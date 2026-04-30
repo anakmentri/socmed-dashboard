@@ -25,15 +25,15 @@ async function uploadVideoChunked(
   const baseUrl = "https://api.x.com/2/media/upload";
 
   // ============ INIT ============
-  const initBody = new URLSearchParams({
-    command: "INIT",
-    total_bytes: String(totalBytes),
-    media_type: mimeType,
-    media_category: "tweet_video",
-  });
-  const initRes = await fetch(`${baseUrl}?${initBody.toString()}`, {
+  // Twitter v2: command di query, params lain di form-data body
+  const initForm = new FormData();
+  initForm.append("total_bytes", String(totalBytes));
+  initForm.append("media_type", mimeType);
+  initForm.append("media_category", "tweet_video");
+  const initRes = await fetch(`${baseUrl}?command=INIT`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
+    body: initForm,
   });
   if (!initRes.ok) {
     const txt = await initRes.text().catch(() => "");
@@ -58,8 +58,10 @@ async function uploadVideoChunked(
       "media",
       new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" })
     );
-    const appendUrl = `${baseUrl}?command=APPEND&media_id=${mediaId}&segment_index=${segmentIndex}`;
-    const appendRes = await fetch(appendUrl, {
+    // APPEND: media_id + segment_index di form body, command di query
+    form.append("media_id", mediaId);
+    form.append("segment_index", String(segmentIndex));
+    const appendRes = await fetch(`${baseUrl}?command=APPEND`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
       body: form,
@@ -75,10 +77,12 @@ async function uploadVideoChunked(
   }
 
   // ============ FINALIZE ============
-  const finalUrl = `${baseUrl}?command=FINALIZE&media_id=${mediaId}`;
-  const finalRes = await fetch(finalUrl, {
+  const finalForm = new FormData();
+  finalForm.append("media_id", mediaId);
+  const finalRes = await fetch(`${baseUrl}?command=FINALIZE`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
+    body: finalForm,
   });
   if (!finalRes.ok) {
     const txt = await finalRes.text().catch(() => "");
@@ -99,8 +103,10 @@ async function uploadVideoChunked(
     }
     const checkAfterSec = processingInfo.check_after_secs || 2;
     await new Promise((r) => setTimeout(r, checkAfterSec * 1000));
+    // STATUS query (GET) — pakai query params
     const statusUrl = `${baseUrl}?command=STATUS&media_id=${mediaId}`;
     const statusRes = await fetch(statusUrl, {
+      method: "GET",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!statusRes.ok) break;
