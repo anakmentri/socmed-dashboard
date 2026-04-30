@@ -24,6 +24,7 @@ const ALLOWED_TABLES = new Set([
   "content_library",
   "post_schedules",
   "scheduled_runs",
+  "scheduled_posts",
 ]);
 
 // PostgREST operator → SQL clause builder

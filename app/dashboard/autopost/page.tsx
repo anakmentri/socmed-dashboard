@@ -79,6 +79,12 @@ function AutoPostInner() {
     errors: string[];
     successLinks: Array<{ account: string; url: string }>;
   } | null>(null);
+
+  // Schedule mode
+  const [scheduleMode, setScheduleMode] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState(""); // local datetime-local string
+  const [scheduleGroup, setScheduleGroup] = useState<string>("Post 1");
+  const [scheduling, setScheduling] = useState(false);
   const [posting, setPosting] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<number | null>(null);
   const [mediaBase64, setMediaBase64] = useState<string>(""); // legacy: 1 file (Twitter)
@@ -729,6 +735,93 @@ function AutoPostInner() {
     }
     // Keep bulkPosting state visible so user can review errors before close
   };
+
+  // Save scheduled post (akan fire pas waktu yg di-set)
+  const saveScheduledPost = async () => {
+    const hasMedia = mediaBase64 || mediaList.length > 0;
+    if (!text.trim() && !hasMedia) return toast("Text atau media wajib", true);
+    if (!scheduleDateTime) return toast("Pilih tanggal & jam dulu", true);
+
+    // Convert datetime-local (browser local TZ = WIB user) ke ISO timestamp
+    const scheduledAt = new Date(scheduleDateTime);
+    if (isNaN(scheduledAt.getTime())) return toast("Tanggal/jam invalid", true);
+    if (scheduledAt.getTime() < Date.now())
+      return toast("Tanggal/jam sudah lewat — pilih waktu yang akan datang", true);
+
+    if (!confirm(
+      `Schedule post ke ${scheduleGroup} (${owner}) pada\n${scheduledAt.toLocaleString("id-ID")}?`
+    )) return;
+
+    setScheduling(true);
+    try {
+      const payload = {
+        platform: tab,
+        owner_name: owner,
+        target_group: scheduleGroup,
+        text_content: text,
+        media_base64: mediaBase64 || (mediaList[0]?.base64 ?? null),
+        scheduled_at: scheduledAt.toISOString(),
+        status: "pending",
+        created_by: myName,
+      };
+      const { error } = await supabase.from("scheduled_posts").insert(payload);
+      if (error) {
+        toast("Gagal: " + error.message, true);
+      } else {
+        logAs(
+          session,
+          "Schedule Bulk Post",
+          "Auto Post",
+          `${scheduleGroup} (${owner}) untuk ${scheduledAt.toLocaleString("id-ID")}`
+        );
+        toast(`✅ Scheduled untuk ${scheduledAt.toLocaleString("id-ID")}`);
+        setText("");
+        clearMedia();
+        setScheduleDateTime("");
+        setScheduleMode(false);
+        loadScheduledPosts();
+      }
+    } catch (e) {
+      toast(`Error: ${e instanceof Error ? e.message : "unknown"}`, true);
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  // Pending scheduled posts list
+  const [pendingSchedules, setPendingSchedules] = useState<
+    Array<{
+      id: number;
+      target_group: string;
+      text_content: string;
+      scheduled_at: string;
+      owner_name: string;
+      platform: string;
+    }>
+  >([]);
+  const loadScheduledPosts = async () => {
+    const { data } = await supabase
+      .from("scheduled_posts")
+      .select("id,target_group,text_content,scheduled_at,owner_name,platform")
+      .eq("status", "pending")
+      .order("scheduled_at", { ascending: true });
+    setPendingSchedules(data || []);
+  };
+  const cancelScheduled = async (id: number) => {
+    if (!confirm("Batalkan scheduled post ini?")) return;
+    await supabase
+      .from("scheduled_posts")
+      .update({ status: "cancelled" })
+      .eq("id", id);
+    toast("Scheduled post dibatalkan");
+    loadScheduledPosts();
+  };
+
+  // Load on mount
+  useEffect(() => {
+    if (session?.role) loadScheduledPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.role]);
 
   const availConns =
     tab === "twitter"
@@ -1576,20 +1669,147 @@ function AutoPostInner() {
           <span className={`text-xs font-semibold ${charColor}`}>
             {charCount}/{charLimit} karakter
           </span>
-          <button
-            onClick={postNow}
-            disabled={
-              posting ||
-              (!text.trim() && !mediaBase64 && mediaList.length === 0) ||
-              (tab === "twitter" && text.length > 280) ||
-              availConns.length === 0
-            }
-            className="rounded-full px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
-            style={{ backgroundColor: currentPlatform.color }}
-          >
-            {posting ? "Posting..." : `🚀 Post ke ${currentPlatform.name}`}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Toggle Schedule mode */}
+            <button
+              onClick={() => setScheduleMode(!scheduleMode)}
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                scheduleMode
+                  ? "bg-brand-amber text-bg-900"
+                  : "border border-bg-700 bg-bg-900 text-fg-300 hover:border-brand-amber"
+              }`}
+              title="Jadwalkan post untuk fire otomatis pada waktu tertentu"
+            >
+              📅 Jadwalkan
+            </button>
+            <button
+              onClick={postNow}
+              disabled={
+                posting ||
+                scheduleMode ||
+                (!text.trim() && !mediaBase64 && mediaList.length === 0) ||
+                (tab === "twitter" && text.length > 280) ||
+                availConns.length === 0
+              }
+              className="rounded-full px-6 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
+              style={{ backgroundColor: currentPlatform.color }}
+            >
+              {posting ? "Posting..." : `🚀 Post ke ${currentPlatform.name}`}
+            </button>
+          </div>
         </div>
+
+        {/* Schedule form (toggle ON) */}
+        {scheduleMode && (
+          <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm font-bold text-brand-amber">
+                📅 Jadwalkan Bulk Post
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">
+                  Target Group
+                </label>
+                <select
+                  className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
+                  value={scheduleGroup}
+                  onChange={(e) => setScheduleGroup(e.target.value)}
+                >
+                  <option value="Post 1">Post 1 (45 akun)</option>
+                  <option value="Post 2">Post 2 (45 akun)</option>
+                  <option value="Post 3">Post 3 (45 akun)</option>
+                  <option value="Post Short">Post Short (15 akun)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">
+                  Tanggal & Jam (WIB)
+                </label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
+                  value={scheduleDateTime}
+                  min={new Date(Date.now() + 5 * 60_000)
+                    .toISOString()
+                    .slice(0, 16)}
+                  onChange={(e) => setScheduleDateTime(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-end gap-2 border-t border-bg-700 pt-3">
+              <button
+                onClick={() => {
+                  setScheduleMode(false);
+                  setScheduleDateTime("");
+                }}
+                className="rounded-lg border border-bg-700 px-3 py-1.5 text-xs text-fg-300"
+              >
+                Batal
+              </button>
+              <button
+                onClick={saveScheduledPost}
+                disabled={
+                  scheduling ||
+                  !text.trim() ||
+                  !scheduleDateTime
+                }
+                className="rounded-lg bg-brand-amber px-4 py-1.5 text-xs font-bold text-bg-900 hover:opacity-90 disabled:opacity-40"
+              >
+                {scheduling ? "Menjadwalkan..." : "📅 Simpan Schedule"}
+              </button>
+            </div>
+            <div className="mt-2 text-[10px] text-fg-500">
+              💡 Cron jalan tiap jam (kalau cron-job.org aktif). Schedule fire pada
+              jam terdekat setelah waktu yang ditentukan. Pastikan cron-job.org running.
+            </div>
+          </div>
+        )}
+
+        {/* Pending Scheduled Posts */}
+        {pendingSchedules.length > 0 && (
+          <div className="mt-4 rounded-xl border border-bg-700 bg-bg-900/40 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-bold text-fg-100">
+                ⏳ Pending Scheduled Posts ({pendingSchedules.length})
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {pendingSchedules.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-start gap-2 rounded-lg border border-bg-700 bg-bg-800 p-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className="rounded bg-brand-amber/20 px-1.5 py-0.5 font-bold text-brand-amber">
+                        {s.target_group}
+                      </span>
+                      <span className="rounded bg-bg-700 px-1.5 py-0.5 uppercase text-fg-400">
+                        {s.platform}
+                      </span>
+                      <span className="text-fg-500">→ {s.owner_name}</span>
+                      <span className="text-brand-emerald font-mono">
+                        🕐 {new Date(s.scheduled_at).toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-fg-300">
+                      {s.text_content.slice(0, 100)}
+                      {s.text_content.length > 100 ? "…" : ""}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => cancelScheduled(s.id)}
+                    className="shrink-0 rounded bg-red-950/50 px-2 py-1 text-[10px] text-brand-rose hover:bg-red-950"
+                  >
+                    ✕ Batal
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Grouped Bulk History — per post_group untuk copy semua link sekaligus */}

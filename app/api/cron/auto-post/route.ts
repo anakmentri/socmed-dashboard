@@ -392,10 +392,117 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // ============ Process scheduled_posts (one-time bulk) ============
+  type ScheduledPost = {
+    id: number;
+    platform: string;
+    owner_name: string;
+    target_group: string;
+    text_content: string;
+    media_base64: string | null;
+    media_url: string | null;
+    scheduled_at: string;
+  };
+
+  const dueSched = await pool.query<ScheduledPost>(
+    `SELECT id, platform, owner_name, target_group, text_content,
+            media_base64, media_url, scheduled_at
+     FROM ${SCHEMA}.scheduled_posts
+     WHERE status = 'pending' AND scheduled_at <= now()
+     ORDER BY scheduled_at ASC
+     LIMIT 5`
+  );
+
+  const scheduledResults: Array<{
+    scheduled_post_id: number;
+    posted: number;
+    failed: number;
+  }> = [];
+
+  for (const sp of dueSched.rows) {
+    // Build pseudo-content + pseudo-schedule untuk reuse helper
+    const pseudoContent: ContentItem = {
+      id: 0,
+      name: `(scheduled #${sp.id})`,
+      text_content: sp.text_content,
+      media_base64: sp.media_base64,
+      media_url: sp.media_url,
+    };
+    const pseudoSchedule: Schedule = {
+      id: 0,
+      name: `Scheduled #${sp.id}`,
+      platform: sp.platform,
+      owner_name: sp.owner_name,
+      target_group: sp.target_group,
+      hour_utc: 0,
+      minute: 0,
+      frequency: "once",
+      content_mode: "specific",
+      specific_content_id: null,
+      last_run_at: null,
+    };
+
+    const accounts = await getTargetAccounts(pool, pseudoSchedule);
+    const targets = sp.platform === "twitter" ? accounts.twitter : accounts.telegram;
+
+    let posted = 0;
+    let failed = 0;
+    const errors: Array<{ account: string; error: string }> = [];
+
+    for (const target of targets) {
+      const result =
+        sp.platform === "twitter"
+          ? await postToTwitter(target as TwitterConn, pseudoContent, sp.target_group)
+          : await postToTelegram(target as TelegramConn, pseudoContent, sp.target_group);
+      if (result.ok) posted++;
+      else {
+        failed++;
+        errors.push({
+          account:
+            sp.platform === "twitter"
+              ? `@${(target as TwitterConn).twitter_username}`
+              : (target as TelegramConn).chat_title,
+          error: result.error || "unknown",
+        });
+      }
+      await new Promise((r) => setTimeout(r, sp.platform === "twitter" ? 250 : 100));
+    }
+
+    // Mark as fired (success / partial / failed)
+    const newStatus =
+      targets.length === 0
+        ? "no_targets"
+        : failed === 0
+        ? "fired"
+        : posted > 0
+        ? "partial"
+        : "failed";
+    await pool.query(
+      `UPDATE ${SCHEMA}.scheduled_posts
+       SET status = $2, fired_at = now(), posted_count = $3, failed_count = $4, errors = $5::jsonb
+       WHERE id = $1`,
+      [sp.id, newStatus, posted, failed, JSON.stringify(errors)]
+    );
+
+    await pool.query(
+      `INSERT INTO ${SCHEMA}.activity_log (who, role, action, source, detail)
+       VALUES ('auto-cron', 'System', 'Fire Scheduled Post', 'Auto Post', $1)`,
+      [`#${sp.id} ${sp.target_group} (${sp.owner_name}): ${posted}/${targets.length} sukses`]
+    );
+
+    scheduledResults.push({
+      scheduled_post_id: sp.id,
+      posted,
+      failed,
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     processed: results.length,
+    scheduled_processed: scheduledResults.length,
     results,
+    scheduled_results: scheduledResults,
     timestamp: now.toISOString(),
   });
 }
