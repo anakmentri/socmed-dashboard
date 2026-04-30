@@ -264,6 +264,11 @@ export default function SchedulerPage() {
     const h = (utcHour + 7) % 24;
     return String(h).padStart(2, "0") + ":00";
   };
+  // Format WIB hour:minute, e.g. "09:30 WIB"
+  const wibTime = (utcHour: number, utcMinute: number) => {
+    const h = (utcHour + 7) % 24;
+    return `${String(h).padStart(2, "0")}:${String(utcMinute).padStart(2, "0")}`;
+  };
 
   return (
     <PageShell
@@ -381,7 +386,7 @@ export default function SchedulerPage() {
                       </div>
                       <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-fg-400">
                         <span>👤 {s.owner_name}</span>
-                        <span>🕐 {wibHour(s.hour_utc)} WIB ({String(s.hour_utc).padStart(2, "0")}:00 UTC)</span>
+                        <span>🕐 {wibTime(s.hour_utc, s.minute || 0)} WIB</span>
                         <span>📅 {s.frequency}</span>
                         <span>🎲 {s.content_mode}</span>
                         {s.last_run_at && (
@@ -824,23 +829,38 @@ export default function SchedulerPage() {
           </Field>
         </FormRow>
         <FormRow>
-          <Field label="Jam (UTC, kurangi 7 untuk WIB)">
+          <Field label="🕐 Jam Fire (WIB)">
             <input
-              type="number"
-              min={0}
-              max={23}
+              type="time"
               className={inputCls}
-              value={schModal.data.hour_utc ?? 9}
-              onChange={(e) =>
+              value={(() => {
+                // Convert hour_utc + minute → HH:MM WIB
+                const utcHour = schModal.data.hour_utc ?? 9;
+                const utcMin = schModal.data.minute ?? 0;
+                const wibHour = (utcHour + 7) % 24;
+                return `${String(wibHour).padStart(2, "0")}:${String(utcMin).padStart(2, "0")}`;
+              })()}
+              onChange={(e) => {
+                // Parse HH:MM WIB → convert ke UTC untuk storage
+                const [hStr, mStr] = e.target.value.split(":");
+                const wibHour = parseInt(hStr, 10) || 0;
+                const minute = parseInt(mStr, 10) || 0;
+                // WIB = UTC + 7, jadi UTC = WIB - 7 (modulo 24)
+                const utcHour = (wibHour - 7 + 24) % 24;
                 setSchModal((m) => ({
                   ...m,
-                  data: { ...m.data, hour_utc: parseInt(e.target.value, 10) },
-                }))
-              }
+                  data: { ...m.data, hour_utc: utcHour, minute },
+                }));
+              }}
             />
             <div className="mt-1 text-[10px] text-fg-500">
-              {schModal.data.hour_utc !== undefined &&
-                `= ${String(((schModal.data.hour_utc ?? 0) + 7) % 24).padStart(2, "0")}:00 WIB`}
+              Pilih jam dalam zona WIB (Indonesia Barat). Sistem auto-convert ke UTC.
+              {schModal.data.hour_utc !== undefined && (
+                <span className="ml-1 text-fg-600">
+                  · Internal: {String(schModal.data.hour_utc).padStart(2, "0")}:
+                  {String(schModal.data.minute || 0).padStart(2, "0")} UTC
+                </span>
+              )}
             </div>
           </Field>
           <Field label="Mode Konten">
