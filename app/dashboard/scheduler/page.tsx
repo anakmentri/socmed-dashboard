@@ -905,18 +905,46 @@ export default function SchedulerPage() {
             </select>
           </Field>
         )}
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-fg-400">
-          ⚠ Vercel Hobby cron jalan harian. Untuk hourly, register di{" "}
-          <a
-            href="https://cron-job.org"
-            target="_blank"
-            rel="noreferrer"
-            className="text-brand-sky"
-          >
-            cron-job.org
-          </a>{" "}
-          (free) → URL: <code className="rounded bg-bg-900 px-1">https://socmedanalytics.com/api/cron/auto-post?key=...</code>
-        </div>
+        {/* cron-job.org URL ready-to-copy */}
+        {(() => {
+          const secret = process.env.NEXT_PUBLIC_CRON_SECRET || "";
+          const fullUrl = `https://socmedanalytics.com/api/cron/auto-post?key=${secret}`;
+          return (
+            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-fg-400">
+              <div className="mb-1.5">
+                ⚠ Vercel Hobby cron jalan harian. Untuk hourly, register di{" "}
+                <a
+                  href="https://cron-job.org"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-sky hover:underline"
+                >
+                  cron-job.org
+                </a>{" "}
+                (free) — copy URL ini ke field URL cron-job.org:
+              </div>
+              <div className="flex items-center gap-1 rounded bg-bg-900 p-1.5">
+                <code className="flex-1 truncate text-[10px] text-fg-300 font-mono select-all">
+                  {fullUrl}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(fullUrl);
+                    toast("✅ URL cron di-copy ke clipboard");
+                  }}
+                  className="shrink-0 rounded bg-brand-sky px-2 py-0.5 text-[10px] font-bold text-bg-900 hover:opacity-90"
+                  title="Copy URL lengkap dengan secret key"
+                >
+                  📋 Copy
+                </button>
+              </div>
+              <div className="mt-1 text-[9px] text-fg-500">
+                💡 Paste URL di atas ke field <strong>URL</strong> di cron-job.org → schedule
+                hourly (<code>0 * * * *</code>) → semua notification OFF.
+              </div>
+            </div>
+          );
+        })()}
         <div className="flex justify-end gap-2 border-t border-bg-700 pt-4">
           <button
             onClick={() => setSchModal({ open: false, data: {} })}
