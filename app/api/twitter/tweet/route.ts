@@ -195,12 +195,23 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           );
         }
-        const ct = fetchRes.headers.get("content-type") || "";
+        let ct = fetchRes.headers.get("content-type") || "";
+        // Telegram & beberapa CDN serve generic content-type. Infer dari ekstensi URL.
         if (!ct.startsWith("image/") && !ct.startsWith("video/")) {
-          return NextResponse.json(
-            { error: `URL bukan media (content-type: ${ct.slice(0, 60)}). Pastikan URL adalah direct download link.` },
-            { status: 400 }
-          );
+          const lower = url.toLowerCase().split("?")[0];
+          if (/\.(jpe?g)$/i.test(lower)) ct = "image/jpeg";
+          else if (/\.png$/i.test(lower)) ct = "image/png";
+          else if (/\.gif$/i.test(lower)) ct = "image/gif";
+          else if (/\.webp$/i.test(lower)) ct = "image/webp";
+          else if (/\.mp4$/i.test(lower)) ct = "video/mp4";
+          else if (/\.mov$/i.test(lower)) ct = "video/quicktime";
+          else if (/\.webm$/i.test(lower)) ct = "video/webm";
+          else {
+            return NextResponse.json(
+              { error: `URL bukan media (content-type: ${ct.slice(0, 60)}, tidak ada ekstensi file). Pastikan URL adalah direct download link.` },
+              { status: 400 }
+            );
+          }
         }
         const buf = Buffer.from(await fetchRes.arrayBuffer());
         media_base64 = `data:${ct};base64,${buf.toString("base64")}`;

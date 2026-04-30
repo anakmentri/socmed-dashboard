@@ -128,13 +128,23 @@ async function fetchUrlAsBase64(
     if (!res.ok) {
       return { base64: null, error: `Fetch URL gagal: HTTP ${res.status}` };
     }
-    const ct = res.headers.get("content-type") || "";
-    // Validate content-type: harus image/* atau video/*
+    let ct = res.headers.get("content-type") || "";
+    // Telegram & some CDNs serve generic content-type. Infer dari ekstensi URL.
     if (!ct.startsWith("image/") && !ct.startsWith("video/")) {
-      return {
-        base64: null,
-        error: `URL bukan file media (content-type: ${ct.slice(0, 50)}). Pastikan URL adalah direct download link, bukan halaman web.`,
-      };
+      const lower = url.toLowerCase().split("?")[0];
+      if (/\.(jpe?g)$/i.test(lower)) ct = "image/jpeg";
+      else if (/\.png$/i.test(lower)) ct = "image/png";
+      else if (/\.gif$/i.test(lower)) ct = "image/gif";
+      else if (/\.webp$/i.test(lower)) ct = "image/webp";
+      else if (/\.mp4$/i.test(lower)) ct = "video/mp4";
+      else if (/\.mov$/i.test(lower)) ct = "video/quicktime";
+      else if (/\.webm$/i.test(lower)) ct = "video/webm";
+      else {
+        return {
+          base64: null,
+          error: `URL bukan file media (content-type: ${ct.slice(0, 50)}, tidak ada ekstensi). Pastikan URL adalah direct download link.`,
+        };
+      }
     }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length === 0) {
