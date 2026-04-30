@@ -1859,44 +1859,71 @@ function AutoPostInner() {
               </div>
             </div>
 
-            {/* Media URL (alternatif untuk file > 4MB) */}
+            {/* Media: upload langsung di sini (auto-host ke Telegram bot) */}
             <div className="mt-3">
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-fg-400">
-                Media URL (untuk video/foto besar &gt; 4MB)
+                Media (Foto / Video) — Upload Langsung
               </label>
-              <input
-                type="url"
-                className="w-full rounded-lg border border-bg-700 bg-bg-900 px-3 py-2 text-sm text-fg-100 outline-none"
-                placeholder="https://files.catbox.moe/abc.mp4 atau https://i.ibb.co/xxx/foto.jpg"
-                value={scheduleMediaUrl}
-                onChange={(e) => setScheduleMediaUrl(e.target.value)}
-              />
-              <div className="mt-1 text-[10px] text-fg-500">
-                💡 Upload file besar ke{" "}
-                <a
-                  href="https://catbox.moe"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-brand-sky hover:underline"
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    scheduleUploadProgress
+                      ? "border-bg-700 bg-bg-800 text-fg-500 opacity-60"
+                      : "border-brand-sky/40 bg-brand-sky/10 text-brand-sky hover:bg-brand-sky/20"
+                  }`}
                 >
-                  catbox.moe
-                </a>{" "}
-                (max 200MB, no signup) atau{" "}
-                <a
-                  href="https://imgbb.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-brand-sky hover:underline"
-                >
-                  imgbb.com
-                </a>{" "}
-                → paste direct URL di sini.{" "}
-                {mediaBase64 || mediaList.length > 0 ? (
-                  <span className="text-brand-amber">
-                    ⚠ Kalau ini diisi, attachment di atas (Attach Media) di-skip.
-                  </span>
-                ) : null}
+                  {scheduleUploadProgress ? "⏳ Uploading..." : "📎 Pilih File"}
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    className="hidden"
+                    disabled={!!scheduleUploadProgress}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+                      // Read as base64
+                      setScheduleUploadProgress(`Membaca file ${sizeMB}MB...`);
+                      const reader = new FileReader();
+                      reader.onload = async () => {
+                        const dataUri = reader.result as string;
+                        setScheduleUploadProgress(`Uploading ${sizeMB}MB ke Telegram bot...`);
+                        const res = await uploadFileToTelegramHost(dataUri);
+                        setScheduleUploadProgress("");
+                        if (!res.url) {
+                          toast(`Upload gagal: ${res.error}`, true);
+                          return;
+                        }
+                        setScheduleMediaUrl(res.url);
+                        toast(`✅ Media ${sizeMB}MB ter-upload, siap dijadwalkan.`);
+                      };
+                      reader.onerror = () => {
+                        setScheduleUploadProgress("");
+                        toast("Gagal baca file", true);
+                      };
+                      reader.readAsDataURL(f);
+                    }}
+                  />
+                </label>
+                {scheduleMediaUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setScheduleMediaUrl("")}
+                    className="rounded-lg border border-bg-700 px-2 py-1.5 text-[11px] text-fg-400 hover:text-brand-rose"
+                  >
+                    ✕ Hapus
+                  </button>
+                )}
+                <span className="text-[10px] text-fg-500">
+                  Max ~50MB (Telegram bot API). Auto-host ke bot admin, tidak butuh website lain.
+                </span>
               </div>
+              {mediaBase64 || mediaList.length > 0 ? (
+                <div className="mt-2 text-[10px] text-brand-amber">
+                  ⚠ Attachment di Compose atas akan di-skip kalau upload di sini sudah ada.
+                </div>
+              ) : null}
               {scheduleMediaUrl && (() => {
                 const isDrive = scheduleMediaUrl.includes("drive.google.com");
                 const isDirectVideo = /\.(mp4|mov|webm)$/i.test(scheduleMediaUrl);
