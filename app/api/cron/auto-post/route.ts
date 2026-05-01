@@ -167,7 +167,8 @@ async function fetchUrlAsBase64(
 async function postToTwitter(
   conn: TwitterConn,
   content: ContentItem,
-  postGroup: string
+  postGroup: string,
+  postedBy: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     // PASS media_url ke endpoint — endpoint fetch sendiri internal
@@ -176,7 +177,7 @@ async function postToTwitter(
     const payload: Record<string, unknown> = {
       text: content.text_content,
       owner: conn.owner_name,
-      posted_by: "auto-cron",
+      posted_by: postedBy,
       connection_id: conn.id,
       post_group: postGroup,
     };
@@ -207,14 +208,15 @@ async function postToTwitter(
 async function postToTelegram(
   conn: TelegramConn,
   content: ContentItem,
-  postGroup: string
+  postGroup: string,
+  postedBy: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
     const body: Record<string, unknown> = {
       connection_id: conn.id,
       text: content.text_content,
-      posted_by: "auto-cron",
+      posted_by: postedBy,
       post_group: postGroup,
     };
     // Prefer URL (no body inflation)
@@ -331,11 +333,13 @@ export async function GET(req: NextRequest) {
     let failed = 0;
     const errors: Array<{ account: string; error: string }> = [];
 
+    // Recurring schedule: posted_by = owner_name dari schedule (siapa yang setup recurring)
+    const recurringPostedBy = s.owner_name || "auto-cron";
     for (const target of targets) {
       const result =
         s.platform === "twitter"
-          ? await postToTwitter(target as TwitterConn, content, s.target_group)
-          : await postToTelegram(target as TelegramConn, content, s.target_group);
+          ? await postToTwitter(target as TwitterConn, content, s.target_group, recurringPostedBy)
+          : await postToTelegram(target as TelegramConn, content, s.target_group, recurringPostedBy);
       if (result.ok) {
         posted++;
       } else {
@@ -405,11 +409,12 @@ export async function GET(req: NextRequest) {
     media_base64: string | null;
     media_url: string | null;
     scheduled_at: string;
+    created_by: string | null;
   };
 
   const dueSched = await pool.query<ScheduledPost>(
     `SELECT id, platform, owner_name, target_group, text_content,
-            media_base64, media_url, scheduled_at
+            media_base64, media_url, scheduled_at, created_by
      FROM ${SCHEMA}.scheduled_posts
      WHERE status = 'pending' AND scheduled_at <= now()
      ORDER BY scheduled_at ASC
@@ -452,11 +457,14 @@ export async function GET(req: NextRequest) {
     let failed = 0;
     const errors: Array<{ account: string; error: string }> = [];
 
+    // One-time scheduled: posted_by = created_by (siapa yang bikin schedule),
+    // fallback ke owner_name kalau created_by null
+    const onceTimePostedBy = sp.created_by || sp.owner_name || "auto-cron";
     for (const target of targets) {
       const result =
         sp.platform === "twitter"
-          ? await postToTwitter(target as TwitterConn, pseudoContent, sp.target_group)
-          : await postToTelegram(target as TelegramConn, pseudoContent, sp.target_group);
+          ? await postToTwitter(target as TwitterConn, pseudoContent, sp.target_group, onceTimePostedBy)
+          : await postToTelegram(target as TelegramConn, pseudoContent, sp.target_group, onceTimePostedBy);
       if (result.ok) posted++;
       else {
         failed++;
