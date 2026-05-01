@@ -195,6 +195,10 @@ function AutoPostInner() {
   const myName = session?.memberName || (isAdmin ? "admin" : "");
 
   const load = async () => {
+    // Limit: admin lihat semua (200), member lihat lebih sedikit tapi full untuk
+    // 1 bulk post mereka (max ~50 akun + buffer)
+    const postLimit = isMember ? 100 : 200;
+
     const [twC, tgC, twP, tgP, storageC] = await Promise.all([
       isMember && myName
         ? supabase.from("twitter_connections").select("*").eq("owner_name", myName).order("id")
@@ -202,17 +206,35 @@ function AutoPostInner() {
       isMember && myName
         ? supabase.from("telegram_connections").select("*").eq("owner_name", myName).order("id")
         : supabase.from("telegram_connections").select("*").order("id"),
-      supabase
-        .from("twitter_posts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(30),
-      supabase
-        .from("social_posts")
-        .select("*")
-        .eq("platform", "Telegram")
-        .order("created_at", { ascending: false })
-        .limit(30),
+      // Twitter posts: member filter by posted_by = nama mereka (manual bulk post)
+      // OR posts dari cron yang target ke connection mereka — handled JS-side after fetch
+      isMember && myName
+        ? supabase
+            .from("twitter_posts")
+            .select("*")
+            .eq("posted_by", myName)
+            .order("created_at", { ascending: false })
+            .limit(postLimit)
+        : supabase
+            .from("twitter_posts")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(postLimit),
+      // Social posts (Telegram): member filter by posted_by = nama mereka
+      isMember && myName
+        ? supabase
+            .from("social_posts")
+            .select("*")
+            .eq("platform", "Telegram")
+            .eq("posted_by", myName)
+            .order("created_at", { ascending: false })
+            .limit(postLimit)
+        : supabase
+            .from("social_posts")
+            .select("*")
+            .eq("platform", "Telegram")
+            .order("created_at", { ascending: false })
+            .limit(postLimit),
       // Always load admin Telegram bot (any role) — dipakai sebagai storage bot
       // untuk upload file besar (bypass Vercel 4.5MB body limit).
       supabase
@@ -2231,7 +2253,7 @@ function AutoPostInner() {
                           }`}
                         >
                           {isShort && "⚡ "}
-                          {groupName}
+                          {groupName === "All" ? "📢 Semua Akun" : groupName}
                         </span>
                         <span className="text-[10px] text-fg-500">
                           {items.length} post · {links.length} link
