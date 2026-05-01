@@ -25,6 +25,8 @@ const ALLOWED_TABLES = new Set([
   "post_schedules",
   "scheduled_runs",
   "scheduled_posts",
+  "twitter_metrics",
+  "twitter_post_metrics",
 ]);
 
 // PostgREST operator → SQL clause builder

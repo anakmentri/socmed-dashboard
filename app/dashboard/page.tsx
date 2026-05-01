@@ -2,11 +2,13 @@
 import { useState } from "react";
 import { PageShell } from "@/components/PageShell";
 import { DateNav } from "@/components/DateNav";
+import { TwitterAnalytics } from "@/components/TwitterAnalytics";
 import { supabase } from "@/lib/supabase";
 import { DailyWork, IrData, ReportItem, Platform } from "@/lib/types";
 import { today, fN, initials, unpackReportContent, getWeekRange } from "@/lib/utils";
 import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { useCachedData } from "@/hooks/useCachedData";
+import { useSession } from "@/hooks/useSession";
 
 type ReportRow = ReportItem;
 
@@ -26,6 +28,9 @@ export default function OverviewPage() {
   const [date, setDate] = useState(today());
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { team } = useTeamMembers();
+  const { session } = useSession();
+  const isMember = session?.role === "member";
+  const ownerFilter = isMember ? session?.memberName || null : null;
 
   const { data: overviewData, refresh, loading, isStale } = useCachedData<{
     dailyWork: DailyWork[];
@@ -317,6 +322,9 @@ export default function OverviewPage() {
       </div>
 
       {/* Kinerja Anggota — per anggota, per hari, % target harian */}
+      {/* Twitter Analytics — followers growth, engagement, top accounts */}
+      <TwitterAnalytics ownerFilter={ownerFilter} />
+
       <div className="mb-6 rounded-xl border border-bg-700 bg-bg-800">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-bg-700 px-5 py-3">
           <div className="flex items-center gap-2">
