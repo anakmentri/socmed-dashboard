@@ -13,8 +13,8 @@ function getSupabase() {
 
 /**
  * Upload video ke Twitter via chunked upload (INIT/APPEND/FINALIZE/STATUS).
- * Required untuk video > 5MB (single-shot reject 413).
- * Twitter v2 /2/media/upload mendukung command query param.
+ * Pakai endpoint v2 /2/media/upload dengan command query param + OAuth 2.0
+ * Bearer token user context (scope media.write). Support video sampai 512MB.
  */
 async function uploadVideoChunked(
   accessToken: string,
@@ -22,18 +22,17 @@ async function uploadVideoChunked(
   mimeType: string
 ): Promise<{ media_id: string | null; error?: string }> {
   const totalBytes = buf.length;
-  // v1.1 endpoint — masih support chunked upload via OAuth 2.0 Bearer
-  const baseUrl = "https://upload.twitter.com/1.1/media/upload.json";
+  const baseUrl = "https://api.x.com/2/media/upload";
+  const authHeader = { Authorization: `Bearer ${accessToken}` };
 
   // ============ INIT ============
-  // Twitter v2: command di query, params lain di form-data body
   const initForm = new FormData();
   initForm.append("total_bytes", String(totalBytes));
   initForm.append("media_type", mimeType);
   initForm.append("media_category", "tweet_video");
   const initRes = await fetch(`${baseUrl}?command=INIT`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: authHeader,
     body: initForm,
   });
   if (!initRes.ok) {
@@ -44,27 +43,26 @@ async function uploadVideoChunked(
   const mediaId =
     initJson.data?.id ||
     initJson.media_id_string ||
-    String(initJson.media_id || "");
+    (initJson.media_id ? String(initJson.media_id) : "");
   if (!mediaId) {
     return { media_id: null, error: `INIT no media_id: ${JSON.stringify(initJson).slice(0, 200)}` };
   }
 
-  // ============ APPEND chunks (max 4MB each, safe under Twitter 5MB chunk limit) ============
+  // ============ APPEND chunks (4MB each, safe under Twitter 5MB chunk limit) ============
   const CHUNK_SIZE = 4 * 1024 * 1024;
   let segmentIndex = 0;
   for (let offset = 0; offset < totalBytes; offset += CHUNK_SIZE) {
     const chunk = buf.subarray(offset, Math.min(offset + CHUNK_SIZE, totalBytes));
     const form = new FormData();
+    form.append("media_id", mediaId);
+    form.append("segment_index", String(segmentIndex));
     form.append(
       "media",
       new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" })
     );
-    // APPEND: media_id + segment_index di form body, command di query
-    form.append("media_id", mediaId);
-    form.append("segment_index", String(segmentIndex));
     const appendRes = await fetch(`${baseUrl}?command=APPEND`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: authHeader,
       body: form,
     });
     if (!appendRes.ok) {
@@ -82,7 +80,7 @@ async function uploadVideoChunked(
   finalForm.append("media_id", mediaId);
   const finalRes = await fetch(`${baseUrl}?command=FINALIZE`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: authHeader,
     body: finalForm,
   });
   if (!finalRes.ok) {
@@ -94,7 +92,7 @@ async function uploadVideoChunked(
   // ============ STATUS poll (video processing) ============
   let processingInfo = finalJson.data?.processing_info || finalJson.processing_info;
   let attempts = 0;
-  const maxAttempts = 20; // ~60s max wait
+  const maxAttempts = 30; // ~90s max wait untuk video besar
   while (processingInfo && processingInfo.state !== "succeeded" && attempts < maxAttempts) {
     if (processingInfo.state === "failed") {
       return {
@@ -102,13 +100,12 @@ async function uploadVideoChunked(
         error: `Processing failed: ${processingInfo.error?.message || "unknown"}`,
       };
     }
-    const checkAfterSec = processingInfo.check_after_secs || 2;
+    const checkAfterSec = processingInfo.check_after_secs || 3;
     await new Promise((r) => setTimeout(r, checkAfterSec * 1000));
-    // STATUS query (GET) — pakai query params
     const statusUrl = `${baseUrl}?command=STATUS&media_id=${mediaId}`;
     const statusRes = await fetch(statusUrl, {
       method: "GET",
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: authHeader,
     });
     if (!statusRes.ok) break;
     const statusJson = await statusRes.json().catch(() => ({}));
@@ -282,15 +279,21 @@ export async function POST(req: NextRequest) {
           const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
           const fileName = isVideo ? `video.${ext}` : `photo.${ext}`;
 
-          if (isVideo && buf.length > 5 * 1024 * 1024) {
-            // Video > 5MB tidak bisa upload via OAuth 2.0
-            // (chunked upload v1.1 butuh OAuth 1.0a yang gak kita support)
+          if (isVideo && buf.length > 512 * 1024 * 1024) {
+            // Twitter hard cap untuk video adalah 512MB
             const sizeMB = (buf.length / 1024 / 1024).toFixed(1);
-            mediaError = `Video terlalu besar (${sizeMB}MB). Twitter via OAuth 2.0 hanya support video MAX 5MB. Solusi: compress video dulu (handbrake/clipchamp), atau pakai Telegram (max 50MB).`;
-            // Skip uploadVideoChunked — gak akan jalan dgn OAuth 2.0
-            void uploadVideoChunked;
+            mediaError = `Video ${sizeMB}MB melebihi batas Twitter (512MB). Compress dulu.`;
+          } else if (isVideo && buf.length > 5 * 1024 * 1024) {
+            // Video > 5MB: chunked upload (INIT/APPEND/FINALIZE/STATUS) via v2 endpoint
+            const chunkRes = await uploadVideoChunked(accessToken, buf, mimeType);
+            if (chunkRes.media_id) {
+              mediaId = chunkRes.media_id;
+            } else {
+              const sizeMB = (buf.length / 1024 / 1024).toFixed(1);
+              mediaError = `Video chunked upload (${sizeMB}MB) gagal: ${chunkRes.error || "unknown"}. Coba compress ke <5MB.`;
+            }
           } else if (isVideo) {
-            // Video <= 5MB: try single-shot
+            // Video <= 5MB: single-shot
             const form = new FormData();
             form.append(
               "media",
