@@ -127,3 +127,4 @@ Sama-sama support Next.js out of the box. Pilih apa saja yang Anda suka.
 - Field extra report (`links`, `image`, `notes`) dipack JSON ke kolom `content` agar tidak perlu ALTER TABLE.
 Test1
 Test 2
+Test3
