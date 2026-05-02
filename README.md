@@ -126,3 +126,4 @@ Sama-sama support Next.js out of the box. Pilih apa saja yang Anda suka.
 - Image base64 asset dibatasi 2 MB supaya aman di kolom TEXT Supabase.
 - Field extra report (`links`, `image`, `notes`) dipack JSON ke kolom `content` agar tidak perlu ALTER TABLE.
 Test1
+Test 2
