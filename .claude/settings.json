@@ -211,7 +211,21 @@
       "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\('Twitter posts history:', j.length\\)}catch\\(e\\){console.log\\('Error:', d.slice\\(0,200\\)\\)}}\\)\")",
       "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/report_items?date=eq.2026-05-01&select=name,title,category\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
       "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\('Tanggal 2026-05-01 ada', j.length, 'report'\\); j.slice\\(0,6\\).forEach\\(\\(r,i\\)=>console.log\\(' -', r.name, '|', r.title, '|', r.category\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,200\\)\\)}}\\)\")",
-      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/soc_accounts?select=id,owner&limit=5\" -H \"apikey: anon-placeholder-not-used-for-auth\")"
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/soc_accounts?select=id,owner&limit=5\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/team_members?select=username,name\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\('Anggota:',j.length\\); j.forEach\\(m=>console.log\\(' -',m.username,'|',m.name\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,200\\)\\)}}\\)\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/soc_accounts?select=owner\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); const counts={}; j.forEach\\(r=>counts[r.owner]=\\(counts[r.owner]||0\\)+1\\); console.log\\('Total akun sosmed:',j.length\\); Object.entries\\(counts\\).sort\\(\\(a,b\\)=>b[1]-a[1]\\).forEach\\(\\([o,c]\\)=>console.log\\(' -',o,':',c,'akun'\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,200\\)\\)}}\\)\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/twitter_connections?select=owner_name\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\('Twitter conn:',j.length,'akun'\\)}catch\\(e\\){console.log\\(d.slice\\(0,200\\)\\)}}\\)\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/rest/v1/soc_accounts?select=id\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(curl -s -I \"https://doodstream.emojiroket.com/rest/v1/soc_accounts?select=id\" -H \"apikey: anon-placeholder-not-used-for-auth\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/dashboard/accounts\" -H \"Cache-Control: no-cache\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/main-app.js\" -o /tmp/main-app.js -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/dashboard/accounts\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/app/dashboard/accounts/page-5606bbedaa52a245.js\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\" -o /tmp/chunk.js)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

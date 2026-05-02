@@ -6,14 +6,21 @@ import { createClient } from "@supabase/supabase-js";
 // twitterdood schema via direct PostgreSQL).
 //
 // Resolve URL otomatis (urutan prioritas):
-// 1. NEXT_PUBLIC_SUPABASE_URL (eksplisit di env, untuk custom domain)
-// 2. NEXT_PUBLIC_VERCEL_URL (auto-set Vercel saat deploy, contoh: doodstream-xxx.vercel.app)
-// 3. window.location.origin (browser fallback)
+// 1. window.location.origin di BROWSER — selalu match dengan origin yang user
+//    akses, jadi gak ada CORS issue meski deploy ke custom domain
+// 2. NEXT_PUBLIC_SUPABASE_URL (eksplisit di env, override khusus)
+// 3. NEXT_PUBLIC_VERCEL_URL (server-side / SSR fallback ke auto Vercel host)
 // 4. http://localhost:3000 (dev fallback)
+//
+// PENTING: Jangan PRIORITASKAN VERCEL_URL di browser karena value-nya =
+// auto-generated host (e.g. doodstream-xxx.vercel.app), bukan custom domain
+// (e.g. doodstream.emojiroket.com) → fetch ke beda origin = CORS blocked.
 function resolveUrl(): string {
+  // Browser: always use current origin (handles custom domain correctly)
+  if (typeof window !== "undefined") return window.location.origin;
+  // Server-side (SSR/build): explicit env > VERCEL_URL > localhost
   if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (process.env.NEXT_PUBLIC_VERCEL_URL) return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
-  if (typeof window !== "undefined") return window.location.origin;
   return "http://localhost:3000";
 }
 
