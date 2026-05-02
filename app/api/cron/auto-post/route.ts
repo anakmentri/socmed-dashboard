@@ -173,7 +173,11 @@ async function postToTwitter(
   try {
     // PASS media_url ke endpoint — endpoint fetch sendiri internal
     // (bypass Vercel body limit dari cron→endpoint HTTP)
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
+    // Resolve base URL: env eksplisit > Vercel auto-host > localhost
+    const vercelHost = process.env.VERCEL_URL;
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
     const payload: Record<string, unknown> = {
       text: content.text_content,
       owner: conn.owner_name,
@@ -212,7 +216,11 @@ async function postToTelegram(
   postedBy: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://socmedanalytics.com";
+    // Resolve base URL: env eksplisit > Vercel auto-host > localhost
+    const vercelHost = process.env.VERCEL_URL;
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
     const body: Record<string, unknown> = {
       connection_id: conn.id,
       text: content.text_content,

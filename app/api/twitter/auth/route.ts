@@ -36,9 +36,16 @@ export async function GET(req: NextRequest) {
   });
 
   const clientId = process.env.TWITTER_CLIENT_ID!;
+  // Resolve callback URL: explicit env > Vercel auto-host > request origin > localhost
+  const vercelHost = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+  const reqOrigin = req.headers.get("host")
+    ? `https://${req.headers.get("host")}`
+    : null;
   const callbackUrl =
     process.env.TWITTER_CALLBACK_URL ||
-    "https://socmedanalytics.com/api/twitter/callback";
+    (vercelHost ? `https://${vercelHost}/api/twitter/callback` : null) ||
+    (reqOrigin ? `${reqOrigin}/api/twitter/callback` : null) ||
+    "http://localhost:3000/api/twitter/callback";
 
   const authUrl = new URL("https://twitter.com/i/oauth2/authorize");
   authUrl.searchParams.set("response_type", "code");

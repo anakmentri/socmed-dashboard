@@ -16,9 +16,16 @@ export async function GET(req: NextRequest) {
   const state = req.nextUrl.searchParams.get("state");
   const error = req.nextUrl.searchParams.get("error");
 
+  // Resolve base URL: env > Vercel auto-host > request origin > localhost
+  const vercelHost = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+  const reqHost = req.headers.get("host");
   const baseUrl = process.env.TWITTER_CALLBACK_URL
     ? new URL(process.env.TWITTER_CALLBACK_URL).origin
-    : "https://socmedanalytics.com";
+    : vercelHost
+    ? `https://${vercelHost}`
+    : reqHost
+    ? `https://${reqHost}`
+    : "http://localhost:3000";
 
   if (error) {
     return NextResponse.redirect(
@@ -48,8 +55,7 @@ export async function GET(req: NextRequest) {
   const clientId = process.env.TWITTER_CLIENT_ID!;
   const clientSecret = process.env.TWITTER_CLIENT_SECRET!;
   const callbackUrl =
-    process.env.TWITTER_CALLBACK_URL ||
-    "https://socmedanalytics.com/api/twitter/callback";
+    process.env.TWITTER_CALLBACK_URL || `${baseUrl}/api/twitter/callback`;
 
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
   const body = new URLSearchParams({

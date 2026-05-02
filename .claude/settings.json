@@ -201,7 +201,8 @@
       "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\('plan:',j.billing?.plan\\); console.log\\('blocked:',j.blocked\\); console.log\\('blockedReason:',j.billing?.subscriptions\\); console.log\\('softBlocked:',j.softBlocked\\); console.log\\('description:',j.description\\);}\\)\")",
       "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j,null,2\\).slice\\(0,3000\\)\\)}\\)\")",
       "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j,null,2\\).slice\\(0,2000\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,500\\)\\)}}\\)\")",
-      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j,null,2\\).slice\\(0,3000\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,500\\)\\)}}\\)\")"
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j,null,2\\).slice\\(0,3000\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,500\\)\\)}}\\)\")",
+      "Bash(git merge *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
