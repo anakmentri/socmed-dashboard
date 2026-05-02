@@ -4,9 +4,9 @@ import { Sidebar } from "@/components/Sidebar";
 import { ToastProvider } from "@/components/Toast";
 import { useSession } from "@/hooks/useSession";
 
-// Bundle version stamp — set ke commit/tanggal terakhir migrasi.
-// Browser auto-reload kalau localStorage version != current version.
-const BUNDLE_VERSION = "2026-04-28-twitterdood";
+// Bundle version stamp — bump untuk paksa reload browser & clear cache lama
+// (kalau ada perubahan data source / config yang butuh fresh state).
+const BUNDLE_VERSION = "2026-05-02-cors-fix";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { session, ready } = useSession(true);
@@ -32,22 +32,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     } catch {}
 
-    // Verify Supabase URL pointing ke domain sendiri (bukan project lama)
-    const expectedUrl = "socmedanalytics.com";
-    if (typeof window !== "undefined") {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-      if (!supabaseUrl.includes(expectedUrl)) {
-        console.warn(
-          "[bundle-check] supabaseUrl seharusnya '" + expectedUrl +
-          "' tapi dapat: " + supabaseUrl + ". Force reload..."
-        );
-        // Force hard reload sekali (skip kalau sudah di-flag biar gak loop)
-        if (!sessionStorage.getItem("force_reload_done")) {
-          sessionStorage.setItem("force_reload_done", "1");
-          window.location.reload();
-        }
-      }
-    }
+    // Removed bundle-check yang hardcoded "socmedanalytics.com" — sekarang URL
+    // resolve otomatis dari window.location.origin (lihat lib/supabase.ts).
+    // Domain bebas (socmedanalytics.com, doodstream.emojiroket.com, dll) sama
+    // bisa dipakai tanpa reconfigure.
   }, []);
 
   if (!ready || !session) {

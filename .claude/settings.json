@@ -225,7 +225,9 @@
       "Bash(curl -s \"https://doodstream.emojiroket.com/dashboard/accounts\")",
       "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/app/dashboard/accounts/page-5606bbedaa52a245.js\")",
       "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\")",
-      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\" -o /tmp/chunk.js)"
+      "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\" -o /tmp/chunk.js)",
+      "Bash(curl -s \"https://doodstream.emojiroket.com\" -o /tmp/index.html)",
+      "Bash(git ls-remote *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
