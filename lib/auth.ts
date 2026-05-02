@@ -34,7 +34,8 @@ export const COLORS = [
 ];
 
 const MEMBERS_KEY = "dashboard_all_members";
-const MEMBERS_CACHE_KEY = "dashboard_members_cache";
+// v2: bump untuk paksa fetch ulang dari DB (cache lama jadi orphan)
+const MEMBERS_CACHE_KEY = "dashboard_members_cache_v2";
 
 export type TeamMember = {
   username: string;

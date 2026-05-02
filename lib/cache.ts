@@ -9,7 +9,9 @@ type CacheEntry<T> = {
   ts: number;
 };
 
-const CACHE_PREFIX = "dashboard_cache_";
+// Bump version (v2) untuk paksa invalidate semua cache lama saat schema/source berubah.
+// Cache lama "dashboard_cache_*" jadi orphan, fetch ulang otomatis dari DB.
+const CACHE_PREFIX = "dashboard_cache_v2_";
 const MEMORY_CACHE = new Map<string, CacheEntry<unknown>>();
 
 // Default TTL: 5 menit. Setelah ini data dianggap "stale" (butuh refresh background)
