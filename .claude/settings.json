@@ -227,7 +227,16 @@
       "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\")",
       "Bash(curl -s \"https://doodstream.emojiroket.com/_next/static/chunks/942-b9dc7c1d742cff55.js\" -o /tmp/chunk.js)",
       "Bash(curl -s \"https://doodstream.emojiroket.com\" -o /tmp/index.html)",
-      "Bash(git ls-remote *)"
+      "Bash(git ls-remote *)",
+      "Bash(curl -s \"https://doodstream.emojiroket.com\" -o /tmp/idx.html)",
+      "Bash(curl -s 'https://doodstream.emojiroket.com/api/pgrest/__TRACKED_VAR__?select=id' -H 'apikey: x')",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/team_members?select=id,username,name,role&order=id\" -H \"apikey: x\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Total anggota:',j.length\\);j.forEach\\(m=>console.log\\(' ',m.id,m.username.padEnd\\(12\\),m.name.padEnd\\(12\\),m.role\\)\\)}catch\\(e\\){console.log\\(d.slice\\(0,200\\)\\)}}\\)\")",
+      "Bash(grep -E \"Team Members|akun$|public\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/twitter_metrics?select=snapshot_date&order=snapshot_date.desc&limit=5\" -H \"apikey: x\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Last',j.length,'snapshot dates:'\\);j.forEach\\(m=>console.log\\(' -',m.snapshot_date\\)\\)}catch\\(e\\){}}\\)\")",
+      "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/scheduled_posts?status=eq.pending&select=id,scheduled_at,target_group,owner_name&order=scheduled_at\" -H \"apikey: x\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Total pending:',j.length\\);j.slice\\(0,5\\).forEach\\(s=>console.log\\(' -',s.scheduled_at,s.target_group,s.owner_name\\)\\)}catch\\(e\\){}}\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",

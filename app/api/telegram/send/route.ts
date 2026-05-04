@@ -5,10 +5,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // Server-side URL resolve: env eksplisit > Vercel auto host > localhost dev
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "anon-placeholder-not-used-for-auth";
+  return createClient(url, key);
 }
 
 /**
