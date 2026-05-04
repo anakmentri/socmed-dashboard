@@ -117,6 +117,8 @@ export default function AccountsPage() {
     owner: string;
     rows: BatchRow[];
   }>({ open: false, owner: "", rows: [{ ...emptyBatchRow }] });
+  // Lock untuk prevent double-click saveBatch (issue: insert akun jadi double)
+  const [savingBatch, setSavingBatch] = useState(false);
   const isMember = session?.role === "member";
   const myName = session?.memberName || "";
 
@@ -163,52 +165,99 @@ export default function AccountsPage() {
     }));
 
   const saveBatch = async () => {
+    // Guard: prevent double-execute (kalau user klik 2x cepat, function lagi jalan)
+    if (savingBatch) return;
     if (!batch.owner) return toast("Pemegang akun wajib dipilih", true);
-    const valid = batch.rows.filter((r) => r.email.trim() && r.password.trim());
-    if (valid.length === 0) return toast("Isi minimal 1 akun (email & password)", true);
 
-    let success = 0;
-    const newBanned = { ...banned };
-    for (const row of valid) {
-      const payload = {
-        owner: batch.owner,
-        platform: row.platform,
-        username: row.username.trim(),
-        email: row.email.trim(),
-        password: row.password.trim(),
-        notes: row.notes.trim(),
-        verify_link: row.verify_link.trim(),
-      };
-      const { data, error } = await supabase
-        .from("soc_accounts")
-        .insert(payload)
-        .select()
-        .single();
-      if (error) {
-        toast(`${row.platform}: ${error.message}`, true);
-        continue;
-      }
-      if (row.banned && data?.id) newBanned[data.id] = true;
-      success++;
+    // Filter rows yang valid (ada email + password)
+    const validRaw = batch.rows.filter((r) => r.email.trim() && r.password.trim());
+    if (validRaw.length === 0) return toast("Isi minimal 1 akun (email & password)", true);
+
+    // Dedup di sisi form: kalau user accidentally tambah row identical
+    // (email + platform sama untuk owner ini), keep yang pertama saja
+    const seen = new Set<string>();
+    const valid = validRaw.filter((r) => {
+      const key = `${r.platform}|${r.email.trim().toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const skippedAsDup = validRaw.length - valid.length;
+    if (skippedAsDup > 0) {
+      toast(`⚠ ${skippedAsDup} baris duplicate (email + platform sama) di-skip`, true);
     }
-    if (success > 0) {
-      // Persist banned IDs to Supabase
-      const newIds = Object.keys(newBanned)
-        .filter((id) => newBanned[Number(id)] && !banned[Number(id)])
-        .map((id) => ({ account_id: Number(id) }));
-      if (newIds.length > 0) {
-        await supabase.from("banned_accounts").upsert(newIds);
-      }
-      setBanned(newBanned);
-      logAs(
-        session,
-        "Tambah Akun Sosmed (Batch)",
-        "Akun Sosmed",
-        `${success} akun ditambahkan untuk ${batch.owner}`
+
+    setSavingBatch(true);
+    try {
+      // Cek dedup juga vs DB existing — biar gak double insert akun yang sudah ada
+      const emails = valid.map((r) => r.email.trim().toLowerCase());
+      const { data: existing } = await supabase
+        .from("soc_accounts")
+        .select("email,platform,owner")
+        .eq("owner", batch.owner)
+        .in("email", emails);
+      const existingKeys = new Set(
+        (existing || []).map((e: { email: string; platform: string }) =>
+          `${e.platform}|${(e.email || "").toLowerCase()}`
+        )
       );
-      toast(`${success} akun ditambahkan`);
-      closeBatch();
-      load();
+
+      let success = 0;
+      let skippedExist = 0;
+      const newBanned = { ...banned };
+      for (const row of valid) {
+        const dbKey = `${row.platform}|${row.email.trim().toLowerCase()}`;
+        if (existingKeys.has(dbKey)) {
+          skippedExist++;
+          continue;
+        }
+        const payload = {
+          owner: batch.owner,
+          platform: row.platform,
+          username: row.username.trim(),
+          email: row.email.trim(),
+          password: row.password.trim(),
+          notes: row.notes.trim(),
+          verify_link: row.verify_link.trim(),
+        };
+        const { data, error } = await supabase
+          .from("soc_accounts")
+          .insert(payload)
+          .select()
+          .single();
+        if (error) {
+          toast(`${row.platform}: ${error.message}`, true);
+          continue;
+        }
+        if (row.banned && data?.id) newBanned[data.id] = true;
+        success++;
+      }
+
+      if (success > 0) {
+        const newIds = Object.keys(newBanned)
+          .filter((id) => newBanned[Number(id)] && !banned[Number(id)])
+          .map((id) => ({ account_id: Number(id) }));
+        if (newIds.length > 0) {
+          await supabase.from("banned_accounts").upsert(newIds);
+        }
+        setBanned(newBanned);
+        logAs(
+          session,
+          "Tambah Akun Sosmed (Batch)",
+          "Akun Sosmed",
+          `${success} akun ditambahkan untuk ${batch.owner}${skippedExist > 0 ? ` (${skippedExist} dup di-skip)` : ""}`
+        );
+        const msg = skippedExist > 0
+          ? `${success} akun ditambahkan, ${skippedExist} sudah ada di DB (di-skip)`
+          : `${success} akun ditambahkan`;
+        toast(msg);
+        closeBatch();
+        load();
+      } else if (skippedExist > 0) {
+        toast(`Semua ${skippedExist} akun sudah ada di DB (tidak ada yang baru)`, true);
+      }
+    } finally {
+      setSavingBatch(false);
     }
   };
 
@@ -1313,9 +1362,10 @@ export default function AccountsPage() {
           </button>
           <button
             onClick={saveBatch}
-            className="rounded-lg bg-brand-sky px-6 py-2 text-sm font-bold text-bg-900"
+            disabled={savingBatch}
+            className="rounded-lg bg-brand-sky px-6 py-2 text-sm font-bold text-bg-900 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Simpan Semua
+            {savingBatch ? "⏳ Menyimpan..." : "Simpan Semua"}
           </button>
         </div>
       </Modal>

@@ -236,7 +236,8 @@
       "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/twitter_metrics?select=snapshot_date&order=snapshot_date.desc&limit=5\" -H \"apikey: x\")",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Last',j.length,'snapshot dates:'\\);j.forEach\\(m=>console.log\\(' -',m.snapshot_date\\)\\)}catch\\(e\\){}}\\)\")",
       "Bash(curl -s \"https://doodstream.emojiroket.com/api/pgrest/scheduled_posts?status=eq.pending&select=id,scheduled_at,target_group,owner_name&order=scheduled_at\" -H \"apikey: x\")",
-      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Total pending:',j.length\\);j.slice\\(0,5\\).forEach\\(s=>console.log\\(' -',s.scheduled_at,s.target_group,s.owner_name\\)\\)}catch\\(e\\){}}\\)\")"
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('Total pending:',j.length\\);j.slice\\(0,5\\).forEach\\(s=>console.log\\(' -',s.scheduled_at,s.target_group,s.owner_name\\)\\)}catch\\(e\\){}}\\)\")",
+      "Bash(DRY_RUN=false npx tsx scripts/clean-duplicate-accounts.ts)"
     ],
     "additionalDirectories": [
       "c:\\Users\\user210\\Downloads\\dashboard-next\\app",
