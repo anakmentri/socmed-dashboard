@@ -32,43 +32,6 @@ const fmt = (n: number) => {
   return n.toLocaleString("id-ID");
 };
 
-// Simple SVG line chart untuk followers growth
-function MiniChart({ data, color = "#1DA1F2" }: { data: number[]; color?: string }) {
-  if (data.length < 2) {
-    return <div className="text-[10px] text-fg-500">Butuh ≥ 2 data point</div>;
-  }
-  const w = 200;
-  const h = 50;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * w;
-      const y = h - ((v - min) / range) * (h - 4) - 2;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  return (
-    <svg width={w} height={h} className="w-full">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={points}
-      />
-      <polyline
-        fill={color}
-        fillOpacity="0.1"
-        stroke="none"
-        points={`0,${h} ${points} ${w},${h}`}
-      />
-    </svg>
-  );
-}
-
 export function TwitterAnalytics({ ownerFilter }: { ownerFilter?: string | null }) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [postMetrics, setPostMetrics] = useState<PostMetric[]>([]);
@@ -139,37 +102,6 @@ export function TwitterAnalytics({ ownerFilter }: { ownerFilter?: string | null 
     return arr;
   }, [metrics]);
 
-  // Engagement stats per akun (avg dari recent posts)
-  const engagementByAccount = useMemo(() => {
-    const byConn: Record<number, PostMetric[]> = {};
-    postMetrics.forEach((p) => {
-      byConn[p.connection_id] = byConn[p.connection_id] || [];
-      byConn[p.connection_id].push(p);
-    });
-    const out: Record<
-      number,
-      { avgLikes: number; avgRT: number; avgReply: number; engagementRate: number; sampleCount: number }
-    > = {};
-    for (const [connId, posts] of Object.entries(byConn)) {
-      const cid = Number(connId);
-      const acc = perAccount.find((a) => a.connection_id === cid);
-      const followers = acc?.followers || 1;
-      const sample = posts.slice(0, 10);
-      const sumL = sample.reduce((s, p) => s + p.like_count, 0);
-      const sumR = sample.reduce((s, p) => s + p.retweet_count, 0);
-      const sumRp = sample.reduce((s, p) => s + p.reply_count, 0);
-      const avgEng = (sumL + sumR + sumRp) / sample.length;
-      out[cid] = {
-        avgLikes: Math.round(sumL / sample.length),
-        avgRT: Math.round(sumR / sample.length),
-        avgReply: Math.round(sumRp / sample.length),
-        engagementRate: followers > 0 ? (avgEng / followers) * 100 : 0,
-        sampleCount: sample.length,
-      };
-    }
-    return out;
-  }, [postMetrics, perAccount]);
-
   // Aggregate totals
   const totals = useMemo(() => {
     const totalFollowers = perAccount.reduce((s, a) => s + a.followers, 0);
@@ -236,8 +168,6 @@ export function TwitterAnalytics({ ownerFilter }: { ownerFilter?: string | null 
     );
   }
 
-  const top10 = perAccount.slice(0, 10);
-
   return (
     <div className="mb-6 space-y-4">
       {/* Header + refresh */}
@@ -279,67 +209,6 @@ export function TwitterAnalytics({ ownerFilter }: { ownerFilter?: string | null 
           value={fmt(totals.totalTweets)}
           accent="text-brand-amber"
         />
-      </div>
-
-      {/* Per-account leaderboard */}
-      <div className="rounded-xl border border-bg-700 bg-bg-800">
-        <div className="flex items-center justify-between border-b border-bg-700 px-5 py-3">
-          <h4 className="text-sm font-bold text-fg-100">
-            🏆 Top {top10.length} Akun by Followers
-          </h4>
-          <span className="text-[10px] text-fg-500">{perAccount.length} akun total</span>
-        </div>
-        <div className="divide-y divide-bg-700">
-          {top10.map((a, i) => {
-            const eng = engagementByAccount[a.connection_id];
-            return (
-              <div key={a.connection_id} className="flex items-center gap-3 px-5 py-3">
-                <span className="w-6 text-right text-xs font-bold text-fg-500">
-                  #{i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`https://x.com/${a.username}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="truncate text-sm font-bold text-brand-sky hover:underline"
-                    >
-                      @{a.username}
-                    </a>
-                    <span className="shrink-0 text-[10px] text-fg-500">
-                      {a.owner_name}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-fg-400">
-                    <span>👥 {fmt(a.followers)}</span>
-                    <span
-                      className={
-                        a.deltaDay > 0
-                          ? "text-brand-emerald"
-                          : a.deltaDay < 0
-                          ? "text-brand-rose"
-                          : ""
-                      }
-                    >
-                      {a.deltaDay > 0 ? "+" : ""}
-                      {fmt(a.deltaDay)} (24h)
-                    </span>
-                    <span>📝 {fmt(a.tweets)} tweets</span>
-                    {eng && (
-                      <span className="text-brand-amber">
-                        ❤ {fmt(eng.avgLikes)} avg · 🔥 {eng.engagementRate.toFixed(2)}% ER
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="hidden w-32 shrink-0 sm:block">
-                  <MiniChart data={a.history} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       {/* Recent top posts (engagement) */}
