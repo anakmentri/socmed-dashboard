@@ -18,15 +18,19 @@ export async function GET(req: NextRequest) {
   const state = req.nextUrl.searchParams.get("state");
   const error = req.nextUrl.searchParams.get("error");
 
-  // Resolve base URL: env > Vercel auto-host > request origin > localhost
+  // Resolve base URL — PRIORITY: explicit env > custom domain (via headers) > VERCEL_URL > localhost
+  // Sama seperti di /api/twitter/auth — pastikan callback URL match dengan yang
+  // dikirim ke Twitter (custom domain), bukan auto-generated vercel.app
+  const fwdHost = req.headers.get("x-forwarded-host");
+  const host = req.headers.get("host");
+  const customHost = fwdHost || host;
   const vercelHost = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
-  const reqHost = req.headers.get("host");
   const baseUrl = process.env.TWITTER_CALLBACK_URL
     ? new URL(process.env.TWITTER_CALLBACK_URL).origin
+    : customHost
+    ? `https://${customHost}`
     : vercelHost
     ? `https://${vercelHost}`
-    : reqHost
-    ? `https://${reqHost}`
     : "http://localhost:3000";
 
   if (error) {

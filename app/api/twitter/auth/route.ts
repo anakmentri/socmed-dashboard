@@ -38,15 +38,23 @@ export async function GET(req: NextRequest) {
   });
 
   const clientId = process.env.TWITTER_CLIENT_ID!;
-  // Resolve callback URL: explicit env > Vercel auto-host > request origin > localhost
+  // Resolve callback URL — PRIORITY URUTAN PENTING:
+  // 1. TWITTER_CALLBACK_URL (env eksplisit, override semua)
+  // 2. x-forwarded-host (custom domain, Vercel proxy)
+  // 3. host header (custom domain langsung)
+  // 4. VERCEL_URL (auto-generated, FALLBACK terakhir karena bukan custom domain)
+  // 5. localhost (dev)
+  //
+  // VERCEL_URL = "doodstream-xxx.vercel.app" (auto), bukan "doodstream.emojiroket.com"
+  // Twitter callback whitelist hanya kenal custom domain, jadi VERCEL_URL akan reject.
+  const fwdHost = req.headers.get("x-forwarded-host");
+  const host = req.headers.get("host");
+  const customHost = fwdHost || host;
   const vercelHost = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
-  const reqOrigin = req.headers.get("host")
-    ? `https://${req.headers.get("host")}`
-    : null;
   const callbackUrl =
     process.env.TWITTER_CALLBACK_URL ||
+    (customHost ? `https://${customHost}/api/twitter/callback` : null) ||
     (vercelHost ? `https://${vercelHost}/api/twitter/callback` : null) ||
-    (reqOrigin ? `${reqOrigin}/api/twitter/callback` : null) ||
     "http://localhost:3000/api/twitter/callback";
 
   const authUrl = new URL("https://twitter.com/i/oauth2/authorize");
