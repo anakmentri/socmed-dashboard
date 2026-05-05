@@ -31,11 +31,25 @@ async function loadAttendance(date: string): Promise<Record<string, AttendanceRe
   }
 }
 
-async function upsertAttendance(date: string, rec: AttendanceRecord) {
-  await supabase.from("attendance").upsert(
-    { date, name: rec.name, status: rec.status, note: rec.note, updated_at: new Date().toISOString() },
-    { onConflict: "date,name" }
-  );
+async function upsertAttendance(
+  date: string,
+  rec: AttendanceRecord
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.from("attendance").upsert(
+      { date, name: rec.name, status: rec.status, note: rec.note, updated_at: new Date().toISOString() },
+      { onConflict: "date,name" }
+    );
+    if (error) {
+      console.error("Attendance upsert error:", error);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown error";
+    console.error("Attendance upsert exception:", e);
+    return { ok: false, error: msg };
+  }
 }
 
 const STATUS_OPTIONS: { value: Status; label: string; cls: string; icon: string }[] = [
@@ -83,9 +97,17 @@ export default function AttendancePage() {
 
   const setStatus = async (name: string, status: Status) => {
     const rec: AttendanceRecord = { name, status, note: records[name]?.note || "" };
+    // Optimistic update UI dulu
     setRecords((r) => ({ ...r, [name]: rec }));
-    await upsertAttendance(date, rec);
+    // Push ke DB, handle error
+    const res = await upsertAttendance(date, rec);
     const s = STATUS_OPTIONS.find((o) => o.value === status);
+    if (!res.ok) {
+      // Rollback: refresh dari DB biar UI kembali sync
+      toast(`⚠ Gagal simpan: ${res.error}. Coba refresh.`, true);
+      refresh();
+      return;
+    }
     logAs(session, `Set Kehadiran ${s?.label}`, "Kehadiran", `${name} pada ${date}`);
     toast(`${name}: ${s?.icon} ${s?.label}`);
   };
@@ -97,8 +119,13 @@ export default function AttendancePage() {
       note: noteText,
     };
     setRecords((r) => ({ ...r, [name]: rec }));
-    await upsertAttendance(date, rec);
+    const res = await upsertAttendance(date, rec);
     setEditNote(null);
+    if (!res.ok) {
+      toast(`⚠ Gagal simpan catatan: ${res.error}`, true);
+      refresh();
+      return;
+    }
     logAs(session, "Edit Catatan Kehadiran", "Kehadiran", `${name}: ${noteText}`);
     toast("Catatan disimpan");
   };
